@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+     "target": "ES2021",
+    "module": "ESNext",
+    "strict": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "hono/jsx",
+    "esModuleInterop":true,
+    "resolveJsonModule":true,
+    "moduleResolution": "node", 
+    "types": ["bun-types"], 
+  }
+}

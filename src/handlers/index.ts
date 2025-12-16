@@ -1,0 +1,8 @@
+export * as user from './user'
+export * as admin from './admin'
+export * as referral from './referral'
+export * as investment from './investment'
+export * as dashboard from './dashboard'
+export * as assets from './assets'
+export * as transaction from './transaction'
+export * as wallet from './wallet'

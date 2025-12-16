@@ -1,0 +1,21 @@
+[
+    {
+        "bsc": {
+            "name": "Bsc Mainnet",
+            "httpRpc": "https://bsc-pokt.nodies.app"
+        }
+    },
+    {
+        "polygon": {
+            "name": "Polygon Mainnet",
+            "httpRpc": "https://polygon-pokt.nodies.app"
+        }
+    },
+    {
+        "amoy": {
+            "name": "Polygon Amoy Testnet",
+            "httpRpc": "https://polygon-amoy.drpc.org"
+            }
+    }
+
+]
