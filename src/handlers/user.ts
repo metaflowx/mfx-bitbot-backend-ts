@@ -106,24 +106,18 @@ export const loginUser = async (c: Context) => {
 
         // Find user by email or mobile number
         const user = await UserModel.findOne(query);
-        if (!user) {
-            return c.json({success: false, message: 'Invalid email or mobile number' });
+        if (!user || !user._id) {
+            return c.json({success: false, message: 'Invalid email' });
         }
 
-        // Compare password
+        /// Compare password
         const isPasswordValid = comparePassword(password, user.password);
         if (!isPasswordValid) {
             return c.json({success: false, message: 'Invalid password' });
         }
 
-        if (!user._id) {
-            return c.json({
-                message: 'something went wrong'
-            })
-        }
-
         const token = await generateJwtToken(user._id.toString());
-        return c.json({success: true, message: 'Login successful', token, user });
+        return c.json({success: true, message: 'Login successful', data: { token } });
     } catch (error) {
         return c.json({success: false, message: 'Server error', error });
     }
