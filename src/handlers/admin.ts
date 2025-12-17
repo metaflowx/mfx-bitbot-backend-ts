@@ -15,18 +15,18 @@ export const createAdmin = async (c: Context) => {
         const { email, password, confirmPassword } = await c.req.json();
 
         if (!email || !password || !confirmPassword) {
-            return c.json({ message: 'Email, Password, and Confirm Password are required' }, 400);
+            return c.json({ success: false,message: 'Email, Password, and Confirm Password are required' });
         }
 
         if (password !== confirmPassword) {
-            return c.json({ message: 'Passwords do not match' }, 400);
+            return c.json({success: false, message: 'Passwords do not match' });
         }
 
         const existingAdmin = await UserModel.findOne({ role: 'ADMIN' });
         if (existingAdmin) {
-            return c.json({ message: 'Admin already exists' }, 403);
+            return c.json({ success: false,message: 'Admin already exists' });
         }
-        const hashedPassword = await Bun.password.hash(password, "bcrypt");
+        const hashedPassword = await Bun.password.hash(password);
 
         const admin = await UserModel.create({
             email: email,
@@ -36,6 +36,7 @@ export const createAdmin = async (c: Context) => {
         });
         if (!admin._id) {
             return c.json({
+                success: false,
                 message: 'something went wrong'
             })
         }
@@ -57,9 +58,9 @@ export const createAdmin = async (c: Context) => {
         await addReferral(referralContext as AddReferralInput);
 
 
-        return c.json({ message: 'Admin created successfully', admin }, 200);
+        return c.json({success: true, message: 'Admin created successfully', admin }, 200);
     } catch (error) {
-        return c.json({ message: 'Server error', error }, 500);
+        return c.json({ success: false,message: 'Server error', error });
     }
 };
 
@@ -69,29 +70,30 @@ export const loginAdmin = async (c: Context) => {
         const { email, password } = await c.req.json();
 
         if (!email || !password) {
-            return c.json({ message: 'Email and Password are required' }, 400);
+            return c.json({success: false, message: 'Email and Password are required' });
         }
 
         const admin = await UserModel.findOne({ email, role: 'ADMIN' });
         if (!admin) {
-            return c.json({ message: 'Invalid email or password' }, 401);
+            return c.json({success: false, message: 'Invalid email or password' });
         }
 
         const isPasswordValid = comparePassword(password, admin.password);
         if (!isPasswordValid) {
-            return c.json({ message: 'Invalid password' }, 401);
+            return c.json({ success: false,message: 'Invalid password' });
         }
         if (!admin._id) {
             return c.json({
+                success: false,
                 message: 'something went wrong'
             })
         }
 
         const token = await generateJwtToken(admin._id.toString());
 
-        return c.json({ message: 'Login successful', token, admin });
+        return c.json({success: true, message: 'Login successful', token, admin });
     } catch (error) {
-        return c.json({ message: 'Server error', error }, 500);
+        return c.json({success: false, message: 'Server error', error });
     }
 };
 
