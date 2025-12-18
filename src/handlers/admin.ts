@@ -64,52 +64,6 @@ export const createAdmin = async (c: Context) => {
     }
 };
 
-// **Admin Login**
-export const loginAdmin = async (c: Context) => {
-    try {
-        const { email, password } = await c.req.json();
-
-        if (!email || !password) {
-            return c.json({success: false, message: 'Email and Password are required' });
-        }
-
-        const admin = await UserModel.findOne({ email, role: 'ADMIN' });
-        if (!admin) {
-            return c.json({success: false, message: 'Invalid email or password' });
-        }
-
-        const isPasswordValid = comparePassword(password, admin.password);
-        if (!isPasswordValid) {
-            return c.json({ success: false,message: 'Invalid password' });
-        }
-        if (!admin._id) {
-            return c.json({
-                success: false,
-                message: 'something went wrong'
-            })
-        }
-
-        const token = await generateJwtToken(admin._id.toString());
-
-        return c.json({success: true, message: 'Login successful', token, admin });
-    } catch (error) {
-        return c.json({success: false, message: 'Server error', error });
-    }
-};
-
-// **Get Admin Details**
-export const getAdmin = async (c: Context) => {
-    try {
-        const admin = await UserModel.findOne({ role: 'ADMIN' }).select('-password');
-        if (!admin) {
-            return c.json({ message: 'Admin not found' }, 404);
-        }
-
-        return c.json({ admin });
-    } catch (error) {
-        return c.json({ message: 'Server error', error }, 500);
-    }
-};
 
 // **Update Admin Details**
 export const updateAdmin = async (c: Context) => {
