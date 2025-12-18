@@ -34,14 +34,16 @@ export const createUser = async (c: Context) => {
         if (!email) {
             return c.json({ success: false, message: 'Either email is required' });
         }
-
+        
 
         // Check if user already exists
-        const existingUser = await UserModel.findOne(email);
+        const existingUser = await UserModel.findOne({email});
         if (existingUser) {
             return c.json({success: false, message: 'User already exists' });
         }
         let referData = await ReferralEarnings.findOne({ referralCode: referralCode });
+        console.log(referData,"lol-80");
+        
         if (!referData) {
             return c.json({
                 success: false,
@@ -78,6 +80,8 @@ export const createUser = async (c: Context) => {
         const newReferralCode = generateUniqueReferralCode(data._id.toString());
 
         const referralContext = { userId: data._id, referrerBy: referData.userId, referralCode: newReferralCode };
+        console.log(referralContext,"lol-81");
+        
         await addReferral(referralContext as AddReferralInput);
 
         /// Generate JWT Token
@@ -85,7 +89,7 @@ export const createUser = async (c: Context) => {
 
         return c.json({ success: true,message: 'User created successfully', data: { token } });
     } catch (error) {
-        return c.json({ success: false, message: 'Server error', error });
+        return c.json({ success: false, message: 'Server error', error },500);
     }
 };
 
