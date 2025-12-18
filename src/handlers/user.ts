@@ -81,7 +81,7 @@ export const createUser = async (c: Context) => {
         await addReferral(referralContext as AddReferralInput);
 
         /// Generate JWT Token
-        const token = await generateJwtToken(data._id.toString());
+        const token = await generateJwtToken(data._id.toString(),data.role);
 
         return c.json({ success: true,message: 'User created successfully', data: { token } });
     } catch (error) {
@@ -116,7 +116,7 @@ export const loginUser = async (c: Context) => {
             return c.json({success: false, message: 'Invalid password' });
         }
 
-        const token = await generateJwtToken(user._id.toString());
+        const token = await generateJwtToken(user._id.toString(),user.role);
         return c.json({success: true, message: 'Login successful', data: { token } });
     } catch (error) {
         return c.json({success: false, message: 'Server error', error });

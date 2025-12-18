@@ -7,12 +7,13 @@ export const comparePassword = (password: string, hashPassword: string) => {
   return Bun.password.verifySync(password, hashPassword)
 };
 
-export const generateJwtToken = (userId: string) => {
+export const generateJwtToken = (userId: string,role: string) => {
 
     const payload_ = {
         id: userId,
-        /// Token expires in 5 days
-        exp: Math.floor(Date.now()/1000) + 5*24*60*60 
+        role: role,
+        /// Token expires in 2 days
+        exp: Math.floor(Date.now()/1000) + 2*24*60*60 
     }
     return Jwt.sign(
         payload_,
