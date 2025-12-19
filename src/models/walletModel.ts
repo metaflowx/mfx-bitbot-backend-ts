@@ -1,6 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose'
 
-/// Interface for Wallet document
 export interface IWallet extends Document {
     userId: mongoose.Types.ObjectId
     address: string
@@ -9,23 +8,22 @@ export interface IWallet extends Document {
     salt: string
     assets: Array<{
         assetId: mongoose.Types.ObjectId
-        balance: string
+        balance: mongoose.Types.Decimal128
     }>,
-    totalBalanceInWeiUsd: string, /// wallet balance usable to invest
-    totalWithdrawInWeiUsd: string,
-    totalDepositInWeiUsd: string,
-    totalFlexibleBalanceInWeiUsd:string, /// earning balance (deduct when user withdraw) | reedem by investment of 55% trade
-    totalLockInWeiUsd: string, /// lock balance (when user invest 55% locked) | reedem by investment of 55% trade value
-    lastWithdrawalAt: Date,
+    totalBalanceInWeiUsd: mongoose.Types.Decimal128
+    totalWithdrawInWeiUsd: mongoose.Types.Decimal128
+    totalDepositInWeiUsd: mongoose.Types.Decimal128
+    totalFlexibleBalanceInWeiUsd: mongoose.Types.Decimal128
+    totalLockInWeiUsd: mongoose.Types.Decimal128
+    lastWithdrawalAt?: Date
     createdAt: Date
     updatedAt: Date
 }
 
-/// Wallet schema
 const walletSchema: Schema = new Schema(
     {
         userId: {
-            type: mongoose.Types.ObjectId,
+            type: mongoose.Schema.Types.ObjectId,
             ref: 'User',
             required: true
         },
@@ -57,34 +55,30 @@ const walletSchema: Schema = new Schema(
                     required: true,
                 },
                 balance: {
-                    type: String,
-                    default: '0',
-                    validate: {
-                        validator: (v: string) => /^\d+$/.test(v),
-                        message: (props: any) => `${props.value} is not a valid balance!`,
-                    },
+                    type: mongoose.Schema.Types.Decimal128,
+                    default: 0,
                 }
             },
         ],
-        totalBalanceInWeiUsd: { /// only use to buy package after deposit and deduct
-            type: String,
-            default: "0",
+        totalBalanceInWeiUsd: {
+            type: mongoose.Schema.Types.Decimal128,
+            default: 0,
         },
         totalWithdrawInWeiUsd: {
-            type: String,
-            default: "0",
+            type: mongoose.Schema.Types.Decimal128,
+            default: 0,
         },
         totalDepositInWeiUsd: {
-            type: String,
-            default: "0",
+            type: mongoose.Schema.Types.Decimal128,
+            default: 0,
         },
-        totalFlexibleBalanceInWeiUsd: { /// earning balance(deduct when user withdraw)
-            type: String,
-            default: "0",
+        totalFlexibleBalanceInWeiUsd: {
+            type: mongoose.Schema.Types.Decimal128,
+            default: 0,
         },
         totalLockInWeiUsd: {
-            type: String,
-            default: "0",
+            type: mongoose.Schema.Types.Decimal128,
+            default: 0,
         },
         lastWithdrawalAt: {
             type: Date

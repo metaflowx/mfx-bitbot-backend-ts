@@ -4,7 +4,7 @@ import { getAssetPriceInUSD } from "../services/assetPriceFromCoingecko";
 import assetsModel, { IAsset } from "../models/assetsModel";
 import { formatUnits, parseEther } from "viem";
 import { Context } from "hono";
-import {getTotalUserBalanceAtAsset, getUserBalanceAtAsset, updateWalletBalance } from "../repositories/wallet";
+import { getUserBalanceAtAsset, updateWalletBalance } from "../repositories/wallet";
 
 
 export const userWallet = async (c: Context) => {
@@ -41,12 +41,3 @@ export const userBalanceAtAsset = async (c: Context) => {
     }
 }
 
-export const totalUserBalanceAtAsset = async (c: Context) => {
-    const user = c.get("user")
-    try {
-        const data = await getTotalUserBalanceAtAsset(user._id)
-        return c.json({success: true, message: "Balance fetching...", data: data })
-    } catch (error) {
-        return c.json({success: false, message: "Error fetching balance" })
-    }
-}

@@ -12,7 +12,6 @@ export const protect = async (c: Context, next: Next) => {
       c.req.header('Authorization')?.startsWith('Bearer')
     ) {
       try {
-        console.log("Authorization Header:", c.req.header('Authorization'));
         
         token = c.req.header('Authorization')?.replace(/Bearer\s+/i, '')
         if (!token) {

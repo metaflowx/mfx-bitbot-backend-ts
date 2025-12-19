@@ -2,129 +2,158 @@ import walletModel, { IWallet } from "../models/walletModel";
 import { getAssetPriceInUSD } from "../services/assetPriceFromCoingecko";
 import assetsModel, { IAsset } from "../models/assetsModel";
 import { formatEther, formatUnits, parseEther, parseUnits } from "viem";
-import mongoose, { ClientSession, Schema, Types } from "mongoose";
+import mongoose, { ClientSession, Types } from "mongoose";
+import { calculateUsdValueInWei } from "../utils/calculateUsdValueInWei";
 
 /// Function to update wallet balance with transactions
 export const updateWalletBalance = async (
   userId: Types.ObjectId,
-  /// Positive for deposit, negative for withdrawal
   balanceChangeInWei: string,
-  assetId?: Types.ObjectId
+  assetId?: Types.ObjectId,
+  session?: ClientSession
 ) => {
+  let ownSession: ClientSession | null = null;
+  
   try {
-    // Find the wallet and the specific asset
-
-    const wallet = await walletModel.findOne({ userId: userId }).populate('assets.assetId')
-    if (!wallet) {
-      throw new Error('Wallet not found for the user. This should not happen!');
+    /// Start session if not provided
+    const activeSession = session || (ownSession = await mongoose.startSession());
+    
+    if (ownSession) await ownSession.startTransaction();
+    
+    /// 1. Validate input
+    const balanceChange = BigInt(balanceChangeInWei);
+    if (balanceChange === 0n) {
+      throw new Error("Balance change cannot be zero");
     }
-
-    /// In case of deposit
+    
+    /// 2. Atomic operation with optimistic locking
+    const wallet = await walletModel.findOne({ userId }).session(activeSession);
+    if (!wallet) throw new Error("Wallet not found");
+    
+    /// 3. For assets, validate balance won't go negative (In case of deposit)
     if (assetId) {
-      /// If the asset exists, update its balance
-      const asset = wallet.assets.find((asset) => asset.assetId.equals(assetId))
-      const assetData = await assetsModel.findOne({ _id: assetId }) as IAsset;
-      const assetPriceInUsd = assetData.coinGeckoId === 'tether'? 1 : await getAssetPriceInUSD(assetData.coinGeckoId);
-      if (asset) {
-        const currentBalance = parseFloat(asset.balance);
-        const change = parseFloat(balanceChangeInWei);
-        asset.balance = (currentBalance + change).toString();
-      } else {
-        /// If the asset does not exist, add it to the wallet
-        await walletModel.updateOne(
-          { userId: userId },
-          {
-            $push: {
-              assets: {
-                assetId: assetId,
-                balance: balanceChangeInWei
-              },
-            },
+      const asset = await assetsModel.findById(assetId).session(activeSession);
+      if (!asset) throw new Error("Asset not found");
+      
+      const existingAsset = wallet.assets.find(a => a.assetId.equals(assetId));
+      
+      if (existingAsset) {
+        const currentBalance = BigInt(existingAsset.balance.toString());
+        const newBalance = currentBalance + balanceChange;
+        
+        if (newBalance < 0n) {
+          throw new Error("Insufficient asset balance");
+        }
+        
+        /// Update with atomic operation
+        const updateResult = await walletModel.updateOne(
+          { 
+            userId, 
+            "assets.assetId": assetId,
+            [`assets.${wallet.assets.findIndex(a => a.assetId.equals(assetId))}.balance`]: existingAsset.balance
           },
+          { 
+            $inc: { "assets.$.balance": Types.Decimal128.fromString(balanceChangeInWei) } 
+          },
+          { session: activeSession }
+        );
+        
+        if (updateResult.modifiedCount === 0) {
+          throw new Error("Concurrent modification detected");
+        }
+      } else if (balanceChange < 0n) {
+        throw new Error("Cannot withdraw non-existent asset");
+      } else {
+        /// Add new asset
+        await walletModel.updateOne(
+          { userId },
+          { $push: { assets: { assetId, balance: Types.Decimal128.fromString(balanceChangeInWei) } } },
+          { session: activeSession }
         );
       }
-      /// Convert in usd 
-      let balanceInUSD = parseFloat(formatEther(BigInt(balanceChangeInWei.toString()))) * Number(assetPriceInUsd)
-      balanceInUSD = parseFloat(parseEther(balanceInUSD.toString()).toString())
-      wallet.totalBalanceInWeiUsd = (parseFloat(wallet.totalBalanceInWeiUsd) + balanceInUSD).toString()
-      wallet.totalDepositInWeiUsd = (parseFloat(wallet.totalDepositInWeiUsd) + balanceInUSD).toString()
+      
+      /// 4. Safer USD calculation 
+      let assetPrice: string;
+      if (asset.coinGeckoId === "tether") {
+        assetPrice = "1.0";
+      } else {
+        assetPrice = await getAssetPriceInUSD(asset.coinGeckoId);
+      }
+      const usdValue = calculateUsdValueInWei(balanceChange, assetPrice);
+      
+      /// Update totals
+      await walletModel.updateOne(
+        { userId },
+        { 
+          $inc: { 
+            totalBalanceInWeiUsd: usdValue,
+            totalDepositInWeiUsd: usdValue
+          } 
+        },
+        { session: activeSession }
+      );
+      
     } else {
-      wallet.lastWithdrawalAt = new Date()
-      wallet.totalFlexibleBalanceInWeiUsd = (parseFloat(wallet.totalFlexibleBalanceInWeiUsd) + parseFloat(balanceChangeInWei)).toString()
-      wallet.totalWithdrawInWeiUsd = (parseFloat(wallet.totalWithdrawInWeiUsd) + parseFloat(balanceChangeInWei)).toString()
+      /// for withdraw
+      /// 5. For flexible balance, validate
+      const currentFlexible = BigInt(wallet.totalFlexibleBalanceInWeiUsd?.toString() || "0");
+      const newFlexible = currentFlexible + balanceChange;
+      
+      if (newFlexible < 0n) {
+        throw new Error("Insufficient flexible balance");
+      }
+      
+      await walletModel.updateOne(
+        { userId },
+        {
+          $inc: { 
+            totalFlexibleBalanceInWeiUsd: Types.Decimal128.fromString(balanceChangeInWei),
+            totalWithdrawInWeiUsd: Types.Decimal128.fromString(balanceChangeInWei)
+          },
+          $set: { lastWithdrawalAt: new Date() }
+        },
+        { session: activeSession }
+      );
     }
-    await wallet.save(); /// Save the updated wallet within the transaction
-    console.log('Wallet balance updated successfully');
+    
+    if (ownSession) {
+      await ownSession.commitTransaction();
+      await ownSession.endSession();
+    }
+    
     return true;
+    
   } catch (error) {
-    console.error('Error updating wallet balance:', error);
-    throw error; /// Throw error to trigger transaction rollback
+    if (ownSession) {
+      await ownSession.abortTransaction();
+      await ownSession.endSession();
+    }
+    console.error("Error updating wallet balance:", error);
+    throw error;
   }
 };
-
 
 export const getUserBalanceAtAsset = async (
   userId: string,
   assetId: Types.ObjectId
 ) => {
-  try {
-    const wallet = await walletModel.findOne({ userId: userId }).populate('assets.assetId');
+  const wallet = await walletModel.findOne({ userId }).populate('assets.assetId');
+  if (!wallet) throw new Error("Wallet not found");
 
-    if (!wallet) {
-      return 'Wallet not found';
-    }
+  const asset = wallet.assets.find(a => a.assetId.equals(assetId));
+  if (!asset) throw new Error("Asset not found in wallet");
 
-    const asset = wallet.assets.find((asset) => asset.assetId.equals(assetId));
+  const assetData = await assetsModel.findById(asset.assetId) as IAsset;
+  const assetPrice = await getAssetPriceInUSD(assetData.coinGeckoId);
 
-    if (!asset) {
-      return 'Asset not found in wallet';
-    }
-    const assetData = await assetsModel.findOne({ _id: asset.assetId }) as IAsset;
-    const assetPriceInUSD = await getAssetPriceInUSD(assetData.coinGeckoId);
+  const balanceInWei = BigInt(asset.balance.toString());
+  const balanceInUSD = (Number(balanceInWei) * Number(assetPrice));
 
-    /// Convert balance 
-    let balanceInUSD = Number(formatUnits(BigInt(asset.balance), assetData.decimals)) * Number(assetPriceInUSD)
-    balanceInUSD = Number(parseUnits(balanceInUSD.toString(), assetData.decimals))
-
-    return {
-      balance: asset.balance,
-      balanceInUSD: balanceInUSD
-    };
-  } catch (error) {
-    console.error('Error fetching balance and lock:', error);
-  }
-}
+  return {
+    balance: asset.balance,
+    balanceInUSD: balanceInUSD.toString()
+  };
+};
 
 
-/// Function to get user balance with total in USD
-export const getTotalUserBalanceAtAsset = async (userId: string) => {
-  try {
-    const wallet = await walletModel.findOne({ userId }).populate('assets.assetId').select("-encryptedSymmetricKey -encryptedPrivateKey -salt");
-
-    if (!wallet) {
-      return 'Wallet not found';
-    }
-
-    let totalBalanceInWeiUsd = 0;
-
-    for (const asset of wallet.assets) {
-      const assetData = await assetsModel.findOne({ _id: asset.assetId }) as IAsset;
-
-      const assetPriceInUSD = await getAssetPriceInUSD(assetData.coinGeckoId);
-
-      /// Convert balance and lock to USD
-
-      const balanceInUSD = Number(formatUnits(BigInt(asset.balance), assetData.decimals)) * Number(assetPriceInUSD)
-
-      totalBalanceInWeiUsd += Number(parseUnits(balanceInUSD.toString(), assetData.decimals));
-    }
-
-    return {
-      wallet,
-      totalSumOfAssetBalanceInWeiUsd: totalBalanceInWeiUsd.toString()
-    };
-  } catch (error) {
-    console.error('Error fetching user balance:', error)
-  }
-}
 

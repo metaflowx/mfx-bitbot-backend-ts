@@ -42,7 +42,7 @@ export const invest = async (c: Context) => {
     }
 
     const availableUsd = Number(
-      formatUnits(BigInt(wallet.totalBalanceInWeiUsd), 18)
+      formatUnits(BigInt(wallet.totalBalanceInWeiUsd.toString()), 18)
     );
 
     if (amountUsd > availableUsd) {
@@ -90,7 +90,7 @@ export const redeem = async (c: Context) => {
     }
 
     const lockedUsd = Number(
-      formatUnits(BigInt(wallet.totalLockInWeiUsd), 18)
+      formatUnits(BigInt(wallet.totalLockInWeiUsd.toString()), 18)
     );
 
     if (amountUsd > lockedUsd) {

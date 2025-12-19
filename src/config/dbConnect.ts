@@ -4,7 +4,7 @@ export const connectMongoDB= async(DATABASE_URL:string,_dbName:string)=> {
     try {
       const DB_OPTIONS = {
         dbName: _dbName,
-        autoIndex: true,
+        autoIndex: false,
         socketTimeoutMS: 45000,
         serverSelectionTimeoutMS: 60000
       }
@@ -14,3 +14,5 @@ export const connectMongoDB= async(DATABASE_URL:string,_dbName:string)=> {
       console.log(error)
     }
   }
+
+
