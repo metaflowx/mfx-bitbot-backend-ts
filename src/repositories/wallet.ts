@@ -17,8 +17,7 @@ export const updateWalletBalance = async (
   try {
     /// Start session if not provided
     const activeSession = session || (ownSession = await mongoose.startSession());
-    
-    if (ownSession) await ownSession.startTransaction();
+    if (ownSession) ownSession.startTransaction();
     
     /// 1. Validate input
     const balanceChange = BigInt(balanceChangeInWei);

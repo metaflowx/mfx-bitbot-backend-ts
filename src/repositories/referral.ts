@@ -1,70 +1,69 @@
 import ReferralEarnings, { IReferralEarnings } from '../models/referralModel';
-import mongoose, { Types } from 'mongoose';
+import mongoose, { ClientSession, Types } from 'mongoose';
 import dotenv from "dotenv";
 import walletModel from '../models/walletModel';
 import { parseEther } from 'viem';
-import InvestmentModel from "../models/investmentModel";
 import { LEVEL_CONFIG } from '../utils/getActiveTillLevel';
 
 
 dotenv.config();
 
 export interface AddReferralInput {
-    userId: Types.ObjectId;
-    referrerBy: Types.ObjectId | null;
-    referralCode: string;
+  userId: Types.ObjectId;
+  referrerBy: Types.ObjectId | null;
+  referralCode: string;
 }
 
 export const addReferral = async ({
-    userId,
-    referrerBy,
-    referralCode,
+  userId,
+  referrerBy,
+  referralCode,
 }: AddReferralInput) => {
 
-    /// 1️⃣ Create referral doc for new user
-    let newUserReferral: IReferralEarnings | null = await ReferralEarnings.findOne({ userId });
+  /// 1️⃣ Create referral doc for new user
+  let newUserReferral: IReferralEarnings | null = await ReferralEarnings.findOne({ userId });
 
-    if (!newUserReferral) {
-        newUserReferral = await ReferralEarnings.create({
-            userId,
-            referrerBy,
-            referralCode,
-            totalInvestment: 0,
-            totalEarnings: 0,
-            activeTillLevel: 4,
-            enableReferral: true,
-        });
+  if (!newUserReferral) {
+    newUserReferral = await ReferralEarnings.create({
+      userId,
+      referrerBy,
+      referralCode,
+      totalInvestment: 0,
+      totalEarnings: 0,
+      activeTillLevel: 4,
+      enableReferral: true,
+    });
+  }
+
+  /// 2️⃣ Traverse upline tree
+  let currentReferrerId: Types.ObjectId | null = referrerBy;
+
+  for (let level = 1; level <= 15 && currentReferrerId; level++) {
+
+    const upline: IReferralEarnings | null =
+      await ReferralEarnings.findOne({
+        userId: currentReferrerId,
+      });
+
+    if (!upline) break;
+
+    const levelKey = `level${level}`;
+    const levelData = upline.referralStats.levels.get(levelKey);
+
+    if (!levelData) break;
+
+    /// 🔐 Prevent duplicate
+    if (!levelData.referrals.some(id => id.equals(userId))) {
+      levelData.referrals.push(userId);
+      levelData.count += 1;
     }
 
-    /// 2️⃣ Traverse upline tree
-    let currentReferrerId: Types.ObjectId | null = referrerBy;
+    await upline.save();
 
-    for (let level = 1; level <= 15 && currentReferrerId; level++) {
+    currentReferrerId = upline.referrerBy || null;
+  }
 
-        const upline: IReferralEarnings | null =
-            await ReferralEarnings.findOne({
-                userId: currentReferrerId,
-            });
-
-        if (!upline) break;
-
-        const levelKey = `level${level}`;
-        const levelData = upline.referralStats.levels.get(levelKey);
-
-        if (!levelData) break;
-
-        /// 🔐 Prevent duplicate
-        if (!levelData.referrals.some(id => id.equals(userId))) {
-            levelData.referrals.push(userId);
-            levelData.count += 1;
-        }
-
-        await upline.save();
-
-        currentReferrerId = upline.referrerBy || null;
-    }
-
-    return newUserReferral;
+  return newUserReferral;
 };
 
 
@@ -74,25 +73,27 @@ export const addReferral = async ({
 export const distributeReferralRewards = async (
   userId: Types.ObjectId,
   investmentId: Types.ObjectId,
-  investmentAmountUsd: number
+  investmentAmountUsd: number,
+  session?: ClientSession
 ) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
+  let ownSession: ClientSession | null = null;
   try {
+    const activeSession = session || (ownSession = await mongoose.startSession());
+    if (ownSession) ownSession.startTransaction();
+
     let currentReferrerId: Types.ObjectId | null = userId;
 
     for (let level = 1; level <= 15; level++) {
 
       const currentUser = await ReferralEarnings
         .findOne({ userId: currentReferrerId })
-        .session(session);
+        .session(activeSession);
 
       if (!currentUser || !currentUser.referrerBy) break;
 
       const upline = await ReferralEarnings
         .findOne({ userId: currentUser.referrerBy })
-        .session(session);
+        .session(activeSession);
 
       if (!upline || !upline.enableReferral) {
         currentReferrerId = currentUser.referrerBy;
@@ -125,8 +126,8 @@ export const distributeReferralRewards = async (
 
         const walletRes = await walletModel.updateOne(
           { userId: upline.userId },
-          { $inc: { totalFlexibleBalanceInWeiUsd: incomeWei.toString() } },
-          { session }
+          { $inc: { totalFlexibleBalanceInWeiUsd: Types.Decimal128.fromString(incomeWei.toString()) } },
+          { session: activeSession }
         );
 
         if (walletRes.matchedCount === 0) {
@@ -140,17 +141,21 @@ export const distributeReferralRewards = async (
       /// 🔒 Mark investment processed
       upline.processedInvestments.push(investmentId);
 
-      await upline.save({ session });
+      await upline.save({ session: activeSession });
 
       currentReferrerId = upline.userId;
     }
 
-    await session.commitTransaction();
-    session.endSession();
+    if (ownSession) {
+      await ownSession.commitTransaction();
+      await ownSession.endSession();
+    }
 
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
+        if (ownSession) {
+      await ownSession.abortTransaction();
+      await ownSession.endSession();
+    }
     throw error;
   }
 };

@@ -4,6 +4,8 @@ import investmentModel, { IInvestment } from '../models/investmentModel';
 import { distributeReferralRewards } from './referral';
 import { getActiveTillLevel } from '../utils/getActiveTillLevel';
 import ReferralEarnings, { IReferralEarnings } from '../models/referralModel';
+import walletModel from '../models/walletModel';
+import { parseEther } from 'viem';
 
 
 export const addInvestment = async (
@@ -14,6 +16,13 @@ export const addInvestment = async (
   session.startTransaction();
 
   try {
+    const incomeWei = parseEther(amountUsd.toString());
+
+    await walletModel.updateOne(
+      { userId: userId },
+      { $dcr: { totalFlexibleBalanceInWeiUsd: Types.Decimal128.fromString(incomeWei.toString()) } },
+      { session }
+    )
     /// 1️⃣ BTC price
     const { btcPrice } = await priceOfIndexCurrency();
 
@@ -54,11 +63,12 @@ export const addInvestment = async (
     await distributeReferralRewards(
       userId,
       investmentId,
-      amountUsd
+      amountUsd,
+      session
     );
 
     await session.commitTransaction();
-    session.endSession();
+    await session.endSession();
 
     return {
       success: true,
@@ -68,9 +78,8 @@ export const addInvestment = async (
 
   } catch (error) {
     await session.abortTransaction();
-    session.endSession();
+    await session.endSession();
 
-    console.error('Investment creation error:', error);
     return {
       success: false,
       message: 'Investment creation failed',
@@ -127,9 +136,8 @@ export const removeInvestment = async (
 
       await referral.save({ session });
     }
-
     await session.commitTransaction();
-    session.endSession();
+    await session.endSession();
 
     return {
       success: true,
@@ -139,7 +147,7 @@ export const removeInvestment = async (
 
   } catch (error) {
     await session.abortTransaction();
-    session.endSession();
+    await session.endSession();
 
     console.error('Investment removal error:', error);
     return {
@@ -226,12 +234,12 @@ const calculateGrowth = (
 
 
 interface InvestmentStats {
-    todaysSumOfInvestmentGrowth: number;
-    yesterdaysSumOfInvestmentGrowth: number;
-    seventhDaysSumOfInvestmentGrowth: number;
-    thirtyDaysSumOfInvestmentGrowth: number;
-    totalSumOfInvestmentGrowth: number;
-    totalSumOfInvestment: number;
+  todaysSumOfInvestmentGrowth: number;
+  yesterdaysSumOfInvestmentGrowth: number;
+  seventhDaysSumOfInvestmentGrowth: number;
+  thirtyDaysSumOfInvestmentGrowth: number;
+  totalSumOfInvestmentGrowth: number;
+  totalSumOfInvestment: number;
 }
 
 export const calculateInvestmentStats = async (
