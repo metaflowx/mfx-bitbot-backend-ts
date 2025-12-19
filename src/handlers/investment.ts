@@ -1,6 +1,6 @@
 import { Context } from 'hono';
-import walletModel from '../models/walletModel'; 
-import{ Types } from 'mongoose';
+import walletModel from '../models/walletModel';
+import { Types } from 'mongoose';
 import { addInvestment, calculateInvestmentStats, removeInvestment } from '../repositories/investment'; // Import function
 import { distributeReferralRewards } from '../repositories/referral'; // Import the function
 import { formatUnits, parseEther, parseUnits } from "viem";
@@ -11,12 +11,13 @@ import investmentModel from '../models/investmentModel';
 
 /// 4. Get All investment list
 export const getInvestmentList = async (c: Context) => {
-    try {
-        const invest = await investmentModel.find().lean();
-        return c.json({ data: invest }, 200);
-    } catch (error) {
-        return c.json({ message: 'Server error', error }, 500);
-    }
+  try {
+    const { type } = c.req.query();
+    const invest = await investmentModel.find({ type }).lean();
+    return c.json({ success: true, message: "Successfully Fetch Invesment List", data: invest });
+  } catch (error) {
+    return c.json({ success: false, message: 'Server error', error });
+  }
 };
 
 
@@ -26,18 +27,18 @@ export const invest = async (c: Context) => {
     const { amount } = await c.req.json();
 
     if (!userData?._id || !amount) {
-      return c.json({ message: "User ID and amount required." }, 400);
+      return c.json({ success: false, message: "User ID and amount required." });
     }
 
     const amountUsd = Number(amount);
 
     if (amountUsd < 10) {
-      return c.json({ message: "Amount must be at least $10" }, 400);
+      return c.json({ success: false, message: "Amount must be at least $10" });
     }
 
     const wallet = await walletModel.findOne({ userId: userData._id });
     if (!wallet) {
-      return c.json({ message: "User wallet not found." }, 404);
+      return c.json({ success: false, message: "User wallet not found." });
     }
 
     const availableUsd = Number(
@@ -45,7 +46,7 @@ export const invest = async (c: Context) => {
     );
 
     if (amountUsd > availableUsd) {
-      return c.json({ message: "Insufficient balance." }, 400);
+      return c.json({ success: false, message: "Insufficient balance." });
     }
 
     /// ✅ SINGLE SOURCE OF TRUTH
@@ -55,17 +56,15 @@ export const invest = async (c: Context) => {
     );
 
     if (!result.success) {
-      return c.json({ message: result.message }, 400);
+      return c.json({ success: false, message: result.message });
     }
 
     return c.json(
-      { message: result.message, data: result.data },
-      200
+      { success: true, message: result.message, data: result.data }
     );
 
   } catch (error) {
-    console.error("Invest error:", error);
-    return c.json({ message: "Server error" }, 500);
+    return c.json({ success: false, message: "Server error" });
   }
 };
 
@@ -76,18 +75,18 @@ export const redeem = async (c: Context) => {
     const { amount } = await c.req.json();
 
     if (!userData?._id || !amount) {
-      return c.json({ message: "User ID and amount required." }, 400);
+      return c.json({ success: false, message: "User ID and amount required." });
     }
 
     const amountUsd = Number(amount);
 
     if (amountUsd < 10) {
-      return c.json({ message: "Amount must be at least $10" }, 400);
+      return c.json({ success: false, message: "Amount must be at least $10" });
     }
 
     const wallet = await walletModel.findOne({ userId: userData._id });
     if (!wallet) {
-      return c.json({ message: "User wallet not found." }, 404);
+      return c.json({ success: false, message: "User wallet not found." });
     }
 
     const lockedUsd = Number(
@@ -95,7 +94,7 @@ export const redeem = async (c: Context) => {
     );
 
     if (amountUsd > lockedUsd) {
-      return c.json({ message: "Insufficient redeem balance." }, 400);
+      return c.json({ success: false, message: "Insufficient redeem balance." });
     }
 
     /// ✅ POSITIVE amount ONLY
@@ -109,33 +108,32 @@ export const redeem = async (c: Context) => {
     }
 
     return c.json(
-      { message: "Redeemed successfully", data: result.data },
-      200
+      { success: true, message: "Redeemed successfully", data: result.data }
     );
 
   } catch (error) {
-    console.error("Redeem error:", error);
-    return c.json({ message: "Server error" }, 500);
+    return c.json({ success: false, message: "Server error" });
   }
 };
 
 
 export const stats = async (c: Context) => {
-    try {
-        const userData = c.get('user'); 
-        const investments = await investmentModel.find({ id:userData._id }).lean();
+  try {
+    const userData = c.get('user');
+    const investments = await investmentModel.find({ id: userData._id }).lean();
 
-        if (!investments || investments.length === 0) {
-            return c.json({ message: "No investments found." }, 404);
-        }
-        const data = await calculateInvestmentStats(investments);
-
-        return c.json({ 
-            data: data
-         }, 200);
-
-    } catch (error) {
-        console.error("Server error:", error);
-        return c.json({ message: "Server error", error }, 500);
+    if (!investments || investments.length === 0) {
+      return c.json({ success: false, message: "No investments found." });
     }
+    const data = await calculateInvestmentStats(investments);
+
+    return c.json({
+      success: true,
+      message: "Investment stats fetched successfully.",
+      data: data
+    });
+
+  } catch (error) {
+    return c.json({ success: false, message: "Server error", error });
+  }
 }

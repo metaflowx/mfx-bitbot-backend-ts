@@ -4,9 +4,9 @@ import { isAdmin, protect } from '../middleware';
 
 const investmentRoutes = new Hono();
 
-investmentRoutes.get('/all',protect, (c) => investment.getInvestmentList(c)); // Public - Get All investment List
+investmentRoutes.get('/read/list',protect, (c) => investment.getInvestmentList(c)); // Public - Get All investment List
 investmentRoutes.post('/invest', protect, (c) => investment.invest(c));
 investmentRoutes.post('/redeem', protect, (c) => investment.redeem(c));
-investmentRoutes.post('/stats', protect, (c) => investment.stats(c));
+investmentRoutes.post('/read/stats', protect, (c) => investment.stats(c));
 
 export default investmentRoutes;

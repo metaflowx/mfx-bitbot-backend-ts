@@ -4,10 +4,10 @@ import { isAdmin, protect } from '../middleware';
 
 const assetsRoutes = new Hono();
 
-assetsRoutes.post('/add', (c) => assets.addAsset(c)); 
-assetsRoutes.put('/edit', protect, (c) => assets.editAsset(c)); 
-assetsRoutes.delete('/delete/:id', protect, isAdmin, (c) => assets.deleteAsset(c));
-assetsRoutes.get('/list', (c) => assets.getAssetList(c)); 
-assetsRoutes.get('/', (c) => assets.getAssetById(c));
+assetsRoutes.post('/create',protect, isAdmin, (c) => assets.addAsset(c)); 
+assetsRoutes.put('/edit', protect,isAdmin, (c) => assets.editAsset(c)); 
+assetsRoutes.delete('/remove', protect, isAdmin, (c) => assets.deleteAsset(c));
+assetsRoutes.get('/read/list', (c) => assets.getAssetList(c)); 
+assetsRoutes.get('/read/one', (c) => assets.getAssetById(c));
 
 export default assetsRoutes;

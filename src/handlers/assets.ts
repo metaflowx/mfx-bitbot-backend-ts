@@ -58,7 +58,7 @@ export const editAsset = async (c: Context) => {
 
 export const deleteAsset = async (c: Context) => {
     try {
-        const { id } = c.req.param();
+        const { id } = c.req.query();
 
         const deletedAsset = await AssetsModel.findByIdAndDelete(id);
 
@@ -91,7 +91,15 @@ export const getAssetById = async (c: Context) => {
 
 export const getAssetList = async (c: Context) => {
     try {
-        const assets = await AssetsModel.find();
+        const {depositEnabled,withdrawalEnabled} = c.req.query();
+        let filter: any = {};
+        if(depositEnabled){
+            filter.depositEnabled = depositEnabled === 'true';
+        }
+        if(withdrawalEnabled){
+            filter.withdrawalEnabled = withdrawalEnabled === 'true';
+        }
+        const assets = await AssetsModel.find(filter);
         return c.json({ message: 'Assets fetched successfully', data: assets });
     } catch (error) {
         return c.json({ message: 'Server error', error }, 500);

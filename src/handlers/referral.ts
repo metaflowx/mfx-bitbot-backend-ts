@@ -10,6 +10,23 @@ import { formatUnits } from "viem";
 
 dotenv.config();
 
+export const referralDetail = async (c: Context) => {
+  try {
+    const userId = c.get("user").id;
+
+    const referralData = await ReferralEarnings.findOne({ userId: userId }).lean();
+    return c.json(
+      { 
+        success: true, 
+        message: "Referral fetch successfully", 
+        data: referralData 
+      },
+    );
+  } catch (error) {
+    return c.json({ success: false,message: "Server error", error });
+  }
+}
+
 /**
  * Get referral stats for the logged-in user
  */
@@ -27,12 +44,12 @@ export const getReferralStats = async (c: Context) => {
       query["createdAt"] = dateFilter;
     }
 
-    const referralStats = await ReferralEarnings.findOne(query);    
+    const referralStats = await ReferralEarnings.findOne(query);
     if (!referralStats) {
-      return c.json({ message: "No referral stats found" }, 404);
+      return c.json({ success: false, message: "No referral stats found" });
     }
 
-    const levelsMap :any= referralStats.referralStats.levels || new Map();
+    const levelsMap: any = referralStats.referralStats.levels || new Map();
     const levels = Object.fromEntries(levelsMap);
 
     const totalEarningsLevelWise: Record<string, number> = {};
@@ -54,14 +71,14 @@ export const getReferralStats = async (c: Context) => {
       return wallets.reduce((sum, wallet) => {
         const deposit = wallet.totalDepositInWeiUsd
           ? Number(
-              formatUnits(BigInt(wallet.totalDepositInWeiUsd.toString()), 18)
-            )
+            formatUnits(BigInt(wallet.totalDepositInWeiUsd.toString()), 18)
+          )
           : 0;
         return sum + deposit;
       }, 0);
     };
 
-    const levelStats :any= {};
+    const levelStats: any = {};
     for (const [levelName, level] of Object.entries(levels)) {
       const teamTopUp = await getTeamTopUp(level.referrals || []);
       totalTeamTopUp += teamTopUp;
@@ -76,6 +93,7 @@ export const getReferralStats = async (c: Context) => {
 
     return c.json(
       {
+        success: true,
         message: "Referral stats fetched successfully",
         data: {
           referralStats,
@@ -83,14 +101,13 @@ export const getReferralStats = async (c: Context) => {
           totalEarnings,
           totalEarningsLevelWise,
           totalTeamCount,
-          totalTodayEarning:0,
+          totalTodayEarning: 0,
           totalTeamTopUp: totalTeamTopUp.toFixed(2),
         },
       },
-      200
     );
   } catch (error) {
-    return c.json({ message: "Server error", error }, 500);
+    return c.json({ success: false, message: "Server error", error });
   }
 };
 
@@ -100,20 +117,18 @@ export const getReferralUsersByLevel = async (c: Context) => {
     const userId = c.get("user").id; // Get logged-in user's ID from the token
     const levelKey = `level${level}`;
 
-    const validLevels = ["level1", "level2", "level3"];
-    if (!validLevels.includes(levelKey)) {
-      return c.json({ message: "Invalid level parameter" }, 400);
-    }
+    // const validLevels = ["level1", "level2", "level3"];
+    // if (!validLevels.includes(levelKey)) {
+    //   return c.json({ message: "Invalid level parameter" }, 400);
+    // }
 
     // Find referral stats for the user
     const referralStats = await ReferralEarnings.findOne({ userId }).populate({
       path: `referralStats.levels.$*.referrals`,
       select: "_id",
-    })
-
-
+    }).lean();
     if (!referralStats) {
-      return c.json({ message: "No referral stats found" }, 404);
+      return c.json({ message: "No referral stats found" });
     }
 
     const levelsMap = referralStats.referralStats.levels || new Map();
@@ -122,11 +137,11 @@ export const getReferralUsersByLevel = async (c: Context) => {
     if (!selectedLevelData || !selectedLevelData.referrals.length) {
       return c.json({ message: `No referrals found for ${levelKey}` }, 404);
     }
-    const UserIds = selectedLevelData.referrals.map((ref:any) => ref._id);
+    const UserIds = selectedLevelData.referrals.map((ref: any) => ref._id);
 
     const info = await Promise.all(
       UserIds.map(async (userId: any) => {
-        const [user, investments,referrals] = await Promise.all([
+        const [user, investments, referrals] = await Promise.all([
           userModel.findById(userId).select("email mobileNumber createdAt").lean(),
           investmentModel.findOne({ userId }).select("buyPackagesDetails").lean(),
           ReferralEarnings.findOne({ userId }).select("referralStats.levels.level1.count").lean(),
@@ -149,12 +164,12 @@ export const getReferralUsersByLevel = async (c: Context) => {
         // }        
         return {
           user,
-          count:referrals?.referralStats.levels.level1.count || 0,
+          count: referrals?.referralStats.levels.level1.count || 0,
           // packageName:packageDetails?.name || null
         };
       })
     );
-    
+
     return c.json(
       {
         message: `Referrals fetched for ${levelKey}`,
@@ -162,7 +177,7 @@ export const getReferralUsersByLevel = async (c: Context) => {
       },
       200
     );
-  } catch (error:any) {
+  } catch (error: any) {
     return c.json({ message: "Server error", error: error }, 500);
   }
 };
@@ -194,31 +209,6 @@ export const getReferralEarnings = async (c: Context) => {
   }
 };
 
-/**
- * Get referral earnings history
- */
-export const getReferralHistory = async (c: Context) => {
-  try {
-    const userId = c.get("user").id;
-
-    const referralData = await ReferralEarnings.findOne({ userId })
-      .select("referralStats referrals")
-      .lean();
-    if (!referralData) {
-      return c.json(
-        { success: false, message: "No referral history found" },
-        404
-      );
-    }
-
-    return c.json(
-      { message: "Referral history fetch successfully", history: referralData },
-      200
-    );
-  } catch (error) {
-    return c.json({ message: "Server error", error }, 500);
-  }
-};
 
 export const disableReferral = async (c: Context) => {
   try {
@@ -238,33 +228,33 @@ export const disableReferral = async (c: Context) => {
     // Find the ReferralEarnings record by ID
     const referralRecord = await ReferralEarnings.findById(_id);
     if (!referralRecord) {
-          return c.json({ message: "Referral earnings data not found" }, 404);
+      return c.json({ message: "Referral earnings data not found" }, 404);
     }
-    
-  // Extract userId from the referral record
-  const userId = referralRecord.userId;
-  // Function to recursively freeze the referral tree
-  const updateReferralTree = async (userId: mongoose.Schema.Types.ObjectId) => {
-    // Update the current user's enableReferral status
-    const updatedReferral = await ReferralEarnings.findOneAndUpdate(
-        { userId: userId},
+
+    // Extract userId from the referral record
+    const userId = referralRecord.userId;
+    // Function to recursively freeze the referral tree
+    const updateReferralTree = async (userId: mongoose.Schema.Types.ObjectId) => {
+      // Update the current user's enableReferral status
+      const updatedReferral = await ReferralEarnings.findOneAndUpdate(
+        { userId: userId },
         { $set: { enableReferral: enableReferral } },
         { new: true }
       );
 
-    if (!updatedReferral) {
+      if (!updatedReferral) {
         return;
       }
 
-    // Find all users referred by the current user
-    const referredUsers = await ReferralEarnings.find({ referrerBy: userId });
-      
-    // Recursively freeze the referral tree for each referred user
-      await Promise.all(referredUsers.map(user => updateReferralTree(user.userId)));
+      // Find all users referred by the current user
+      const referredUsers = await ReferralEarnings.find({ referrerBy: userId });
+
+      // Recursively freeze the referral tree for each referred user
+      await Promise.all(referredUsers.map(user => updateReferralTree(user.userId as any)));
     };
 
     // Start freezing the referral tree from the given user
-    await updateReferralTree(userId);
+    await updateReferralTree(userId as any);
 
     return c.json({
       message: "Referral disabled successfully"
@@ -274,80 +264,3 @@ export const disableReferral = async (c: Context) => {
   }
 };
 
-/**
- * Get referral list earnings history
- */
-export const ReferralListHistory = async (c: Context) => {
-  try {
-    const referralData = await ReferralEarnings.find()
-      .select(
-        "referralStats.userId referralStats.levels referralCode enableReferral"
-      )
-      .populate({
-        path: "userId",
-        match: { role: { $ne: "ADMIN" } }, // Exclude users with role 'ADMIN'
-        select: "email mobileNumber status", // Only include necessary fields
-      })
-      .lean();
-
-    // Filter out entries where userId is null
-    const filteredData = referralData
-      .filter((item) => item.userId !== null)
-      .map((item) => {
-        // Extract earnings from all levels
-        const levelEarnings = item.referralStats?.levels || {};
-        const totalEarnings = Object.values(levelEarnings).reduce(
-          (sum, level) => sum + (level.earnings || 0),
-          0
-        );
-
-        return {
-          ...item,
-          totalEarnings, // Add total earnings field
-        };
-      });
-    if (!filteredData || filteredData.length === 0) {
-      return c.json(
-        { success: false, message: "No referral history found" },
-        404
-      );
-    }
-  
-    const usersWithInvestments = await Promise.all(
-      filteredData.map(async (user:any) => {
-            const packageData = await investmentModel.findOne(
-              { userId: user.userId._id }, 
-              {
-                    buyPackagesDetails: {
-                        $filter: {
-                            input: "$buyPackagesDetails",
-                            as: "package",
-                            cond: true
-                        }
-                    }
-                }
-            ).populate('buyPackagesDetails.packageId');
-            // if (!packageData || packageData.buyPackagesDetails.length === 0) {
-            //     return {
-            //         ...user,
-            //         stats: null 
-            //     };
-            // }        
-            // const stats = calculateInvestmentStats(packageData);
-    
-            return {
-                // ...user,
-                // stats 
-            };
-        })
-      );
-      console.log({usersWithInvestments});
-      
-    return c.json(
-      { message: "Referral history fetch successfully", history: usersWithInvestments },
-      200
-    );
-  } catch (error) {
-    return c.json({ message: "Server error", error }, 500);
-  }
-};

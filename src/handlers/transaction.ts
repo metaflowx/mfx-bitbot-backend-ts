@@ -20,12 +20,12 @@ export const txRequestForDeposit = async (c: Context) => {
 
         const asset = await AssetsModel.findById({ _id: assetId, depositEnabled: true });
         if (!asset) {
-            return c.json({ message: 'Asset not allowed for deposit' }, 400);
+            return c.json({ success: false, message: 'Asset not allowed for deposit' });
         }
 
-        const wallet = await WalletModel.findOne({ userId:user._id });
+        const wallet = await WalletModel.findOne({ userId: user._id });
         if (!wallet) {
-            return c.json({ message: 'Wallet not found' }, 404);
+            return c.json({ success: false, message: 'Wallet not found' });
         }
         const tx = await transactionModel.create({
             userId: user._id,
@@ -34,12 +34,16 @@ export const txRequestForDeposit = async (c: Context) => {
             txHash: randomUUIDv7('hex')
         })
         return c.json({
-            txId: tx._id,
-            asset: asset,
-            depositAddress: wallet.address
+            success: true,
+            message: 'Deposit transaction created successfully',
+            data: {
+                txId: tx._id,
+                asset: asset,
+                depositAddress: wallet.address
+            }
         });
     } catch (error) {
-        return c.json({ message: 'Error fetching deposit details', error }, 500);
+        return c.json({success: false, message: 'Error fetching deposit details', error });
     }
 }
 
@@ -55,16 +59,16 @@ export const txConfirmRequestForDeposit = async (c: Context) => {
             ]
         })
         if (!txData) {
-            return c.json({ message: 'Transaction not found' }, 404);
+            return c.json({success: false, message: 'Transaction not found' });
         }
         await transactionModel.updateOne({
             _id: txId
         }, { $set: { txStatus: "confirmed" } }, { new: true });
 
-        return c.json({ message: 'Transaction confirmed' });
+        return c.json({success: true, message: 'Transaction confirmed' });
 
     } catch (e) {
-        return c.json({ message: 'Error fetching transaction details', error: e }, 500);
+        return c.json({ success: false,message: 'Error fetching transaction details', error: e });
     }
 }
 
@@ -73,39 +77,39 @@ export const txRequestForWithdrawal = async (c: Context) => {
     const user = c.get('user');
     const now = new Date()
     try {
-        const wallet = await WalletModel.findOne({userId: user._id})
+        const wallet = await WalletModel.findOne({ userId: user._id })
         if (!wallet) {
-            return c.json({ message: "User wallet not found." }, 404);
+            return c.json({success: false, message: "User wallet not found." });
         }
-        const referral= await referralModel.findOne({userId: user._id})
-        if(referral && !referral.enableReferral){
-            return c.json({ message: "You Must Activate a Higher Level  to Withdraw Cash" }, 400);
+        const referral = await referralModel.findOne({ userId: user._id })
+        if (referral && !referral.enableReferral) {
+            return c.json({ success: false,message: "You Must Activate a Higher Level  to Withdraw Cash" });
         }
         if (wallet.lastWithdrawalAt) {
             const lastWithdrawalTime = new Date(wallet.lastWithdrawalAt);
             const timeSinceLastWithdrawal = now.getTime() - lastWithdrawalTime.getTime();
             const twentyFourHoursInMs = 24 * 60 * 60 * 1000; /// 24 hours
-        
+
             if (timeSinceLastWithdrawal < twentyFourHoursInMs) {
-                return c.json({ message: "Please wait 24 hours before your next withdrawal." }, 400);
+                return c.json({success: false, message: "Please wait 24 hours before your next withdrawal." });
             }
         }
         if (withdrawalAmount == 0) return c.json({ message: "Withdrawal amount should be greater than zero." }, 400);
         if (withdrawalAmount > parseFloat(formatUnits(BigInt(wallet.totalFlexibleBalanceInWeiUsd), 18))) {
-            return c.json({ message: "Insufficient balance." }, 400);
+            return c.json({success: false, message: "Insufficient balance." });
         }
-        
+
         const asset = await AssetsModel.findById({ _id: assetId, withdrawalEnabled: true });
         if (!asset) {
-            return c.json({ message: 'Asset not allowed for withdrawal' }, 400);
+            return c.json({success: false, message: 'Asset not allowed for withdrawal' });
         }
         const data = await UserModel.findById({ _id: user._id })
         if (!data) {
-            return c.json({ message: 'User not found' }, 404);
+            return c.json({success: false, message: 'User not found' });
         }
         const isPasswordValid = comparePassword(password, data.password);
         if (!isPasswordValid) {
-            return c.json({ message: 'Invalid password' }, 401);
+            return c.json({success: false, message: 'Invalid password' });
         }
         const tx = await TransactionModel.create({
             userId: user._id,
@@ -115,29 +119,29 @@ export const txRequestForWithdrawal = async (c: Context) => {
             receiverAddress: withdrawalAddress,
             amountInWei: parseEther(withdrawalAmount).toString()
         })
-        if(tx){
-            await updateWalletBalance(user._id,`-${parseEther(withdrawalAmount)}`)
-            return c.json({ message: 'Withdrawal request sent successfully', data: tx }, 201);
+        if (tx) {
+            await updateWalletBalance(user._id, `-${parseEther(withdrawalAmount)}`)
+            return c.json({success: true, message: 'Withdrawal request sent successfully', data: tx });
         }
-        return c.json({ message: 'Error creating withdrawal request' }, 500);
+        return c.json({success: false, message: 'Error creating withdrawal request' });
     } catch (error) {
-        return c.json({ message: 'Error fetching withdrawal details', error }, 500);
+        return c.json({success: false, message: 'Error fetching withdrawal details', error });
     }
 }
 
 export const getTransactionById = async (c: Context) => {
-    const { txId } = c.req.param();
+    const { txId } = c.req.query();
     try {
         const tx = await TransactionModel
             .findById(txId)
             .populate('userId', '-password')
             .populate('assetId');
         if (!tx) {
-            return c.json({ message: 'Transaction not found' }, 404);
+            return c.json({success: false, message: 'Transaction not found' });
         }
-        return c.json({ message: "Transaction fetching done", data: tx });
+        return c.json({success: true, message: "Transaction fetching done", data: tx });
     } catch (error) {
-        return c.json({ message: 'Error fetching transaction details', error }, 500);
+        return c.json({success: false, message: 'Error fetching transaction details', error });
     }
 }
 
@@ -167,6 +171,7 @@ export const getTransactionList = async (c: Context) => {
         const total = await TransactionModel.countDocuments(filter);
 
         return c.json({
+            success: true,
             message: "Transactions fetching done",
             page: page_,
             limit: limit_,
@@ -175,15 +180,15 @@ export const getTransactionList = async (c: Context) => {
             data: txs,
         });
     } catch (error) {
-        return c.json({ message: 'Error fetching transactions', error }, 500);
+        return c.json({ success: false,message: 'Error fetching transactions', error });
     }
 }
 type Info = {
-    message:string,
-    balance:boolean
+    message: string,
+    balance: boolean
 }
 
-export const updateTx = async (query: any,req: any,info:Info,balanceReq?:any) => {
+export const updateTx = async (query: any, req: any, info: Info, balanceReq?: any) => {
     try {
         /// Check if transaction exists
         const existingTx = await TransactionModel.findOne({ _id: query.id });
@@ -204,10 +209,10 @@ export const updateTx = async (query: any,req: any,info:Info,balanceReq?:any) =>
         }
 
         console.log(`${info.message} Tx updated:, ${updatedTx}`);
-        if(info.balance){
-            await updateWalletBalance(balanceReq.userId,balanceReq.amountInWei,balanceReq.assetId)
+        if (info.balance) {
+            await updateWalletBalance(balanceReq.userId, balanceReq.amountInWei, balanceReq.assetId)
         }
-        
+
         return { success: true, message: 'Transaction updated successfully', data: updatedTx };
     } catch (error) {
         console.error('Error in updateDepositTx:', error);
