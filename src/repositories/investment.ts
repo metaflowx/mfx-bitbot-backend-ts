@@ -20,14 +20,18 @@ export const addInvestment = async (
 
     await walletModel.updateOne(
       { userId: userId },
-      { $dcr: { totalFlexibleBalanceInWeiUsd: Types.Decimal128.fromString(incomeWei.toString()) } },
+      { $inc: { 
+        totalBalanceInWeiUsd: Types.Decimal128.fromString(`-${incomeWei}`) ,
+        totalLockInWeiUsd: Types.Decimal128.fromString(incomeWei.toString())
+      } 
+    },
       { session }
     )
     /// 1️⃣ BTC price
     const { btcPrice } = await priceOfIndexCurrency();
 
     const btcValue = Number(
-      (amountUsd / Number(btcPrice)).toFixed(8)
+      ((amountUsd * 0.55) / Number(btcPrice)).toFixed(8) /// 55%
     );
 
     /// 2️⃣ Create investment
@@ -59,6 +63,7 @@ export const addInvestment = async (
       await referral.save({ session });
     }
     const investmentId = investmentDoc._id as Types.ObjectId;
+    
     /// 4️⃣ Distribute referral rewards (ATOMIC)
     await distributeReferralRewards(
       userId,
@@ -97,6 +102,18 @@ export const removeInvestment = async (
   session.startTransaction();
 
   try {
+
+    const incomeWei = parseEther(amountUsd.toString());
+
+    await walletModel.updateOne(
+      { userId: userId },
+      { $inc: { 
+        totalFlexibleBalanceInWeiUsd: Types.Decimal128.fromString(incomeWei.toString()) ,
+        totalLockInWeiUsd: Types.Decimal128.fromString(`-${incomeWei}`)
+      } 
+    },
+      { session }
+    )
     /// 1️⃣ BTC price
     const { btcPrice } = await priceOfIndexCurrency();
 

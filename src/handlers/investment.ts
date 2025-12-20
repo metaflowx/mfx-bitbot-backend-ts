@@ -12,8 +12,19 @@ import investmentModel from '../models/investmentModel';
 /// 4. Get All investment list
 export const getInvestmentList = async (c: Context) => {
   try {
-    const { type } = c.req.query();
-    const invest = await investmentModel.find({ type }).lean();
+    const userId = c.get('user').id;
+    const { type,sortBy = 'createdAt', sortOrder = 'desc'  } = c.req.query();
+    /// Build query filter
+    const filter: any = { userId };
+    
+    /// Add type filter if provided
+    if (type) {
+      filter.type = type; // Assuming your InvestmentModel has a 'type' field
+    }
+    const invest = await investmentModel
+    .find(filter)
+    .sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 })
+    .lean();
     return c.json({ success: true, message: "Successfully Fetch Invesment List", data: invest });
   } catch (error) {
     return c.json({ success: false, message: 'Server error', error });
@@ -55,7 +66,7 @@ export const invest = async (c: Context) => {
       amountUsd
     );
 
-    if (!result.success) {
+    if(!result.success) {
       return c.json({ success: false, message: result.message });
     }
 

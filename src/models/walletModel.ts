@@ -56,29 +56,29 @@ const walletSchema: Schema = new Schema(
                 },
                 balance: {
                     type: mongoose.Schema.Types.Decimal128,
-                    default: 0,
+                    default: () => new mongoose.Types.Decimal128('0')
                 }
             },
         ],
         totalBalanceInWeiUsd: {
             type: mongoose.Schema.Types.Decimal128,
-            default: 0,
+            default: () => new mongoose.Types.Decimal128('0')
         },
         totalWithdrawInWeiUsd: {
             type: mongoose.Schema.Types.Decimal128,
-            default: 0,
+            default: () => new mongoose.Types.Decimal128('0')
         },
         totalDepositInWeiUsd: {
             type: mongoose.Schema.Types.Decimal128,
-            default: 0,
+            default: () => new mongoose.Types.Decimal128('0')
         },
         totalFlexibleBalanceInWeiUsd: {
             type: mongoose.Schema.Types.Decimal128,
-            default: 0,
+            default: () => new mongoose.Types.Decimal128('0')
         },
         totalLockInWeiUsd: {
             type: mongoose.Schema.Types.Decimal128,
-            default: 0,
+            default: () => new mongoose.Types.Decimal128('0')
         },
         lastWithdrawalAt: {
             type: Date

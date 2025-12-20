@@ -123,10 +123,9 @@ export const distributeReferralRewards = async (
         /// ACTIVE
         levelData.earnings += incomeUsd;
         upline.totalEarnings += incomeUsd;
-
         const walletRes = await walletModel.updateOne(
           { userId: upline.userId },
-          { $inc: { totalFlexibleBalanceInWeiUsd: Types.Decimal128.fromString(incomeWei.toString()) } },
+          { $inc: { totalFlexibleBalanceInWeiUsd: new mongoose.Types.Decimal128(incomeWei.toString()) } },
           { session: activeSession }
         );
 
@@ -152,7 +151,7 @@ export const distributeReferralRewards = async (
     }
 
   } catch (error) {
-        if (ownSession) {
+    if (ownSession) {
       await ownSession.abortTransaction();
       await ownSession.endSession();
     }
