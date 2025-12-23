@@ -10,6 +10,10 @@ import { loadRSAKeyPair } from "../utils/loadRSAKeyPair";
 
 const { privateKey: accessTokenPrivateKey } = loadRSAKeyPair();
 
+const ADMIN_COLD_WALLET =`${Bun.env.ADMIN_COLD_WALLET}`
+const sweepAdminRatio = 0.5 /// 50%
+const sweepKeeperRatio = 0.5 /// 50%
+
 export default class Balance {
 
     constructor(
@@ -35,8 +39,12 @@ export default class Balance {
                 ]
             })
         const keeperBotId = `${Bun.env.KEEPER_BOT}`
+        if (!keeperBotId) {
+            throw new Error("KEEPER_BOT environment variable not set");
+        }
         const coldWallet = await walletModel.findOne({ userId: keeperBotId }) as IWallet
         const coldkey = hybridDecryptWithRSA(accessTokenPrivateKey, coldWallet.encryptedPrivateKey, coldWallet.encryptedSymmetricKey, keeperBotId, coldWallet.salt)
+
         const coldNetwork = new EVMWalletService(this.chain, coldkey as Address)
         const coldWalletClient = coldNetwork.getWalletClient()
         const coldPublicClient = coldNetwork.getPublicClient()
@@ -103,13 +111,13 @@ export default class Balance {
                                 console.log(`Transfer Native COIN for gas fee : ${hash}`);
                             }
 
-                            const { request } = await coldPublicClient.simulateContract({
+                            const { request:adminColdWallet } = await coldPublicClient.simulateContract({
                                 address: asset.assetAddress as Address,
                                 abi: erc20Abi,
                                 functionName: "transfer",
                                 args: [
                                     coldWalletAccount.address,
-                                    balance as bigint,
+                                    BigInt((parseFloat(balance.toString())*sweepAdminRatio).toString()),
 
                                 ],
                                 gas: gas,
@@ -117,8 +125,24 @@ export default class Balance {
                                 blockTag: 'latest',
                                 account
                             })
-                            const txHash = await coldWalletClient.writeContract(request)
-                            console.info(`Transfer Token: ${txHash}`);
+                            const { request:keeperHotWallet } = await coldPublicClient.simulateContract({
+                                address: asset.assetAddress as Address,
+                                abi: erc20Abi,
+                                functionName: "transfer",
+                                args: [
+                                    coldWalletAccount.address,
+                                    BigInt((parseFloat(balance.toString())*sweepKeeperRatio).toString()),
+
+                                ],
+                                gas: gas,
+                                gasPrice: gasPrice,
+                                blockTag: 'latest',
+                                account
+                            })
+                            const txHash1 = await coldWalletClient.writeContract(adminColdWallet)
+                            const txHash2 = await coldWalletClient.writeContract(keeperHotWallet)
+                            console.info(`Transfer Token to KeeperHotWallet: ${txHash1}`);
+                            console.info(`Transfer Token to KeeperHotWallet: ${txHash2}`);
 
                         }
                     } catch (error) {

@@ -12,6 +12,7 @@ export interface ITransaction extends Document {
   txHash: string;
   logIndex?: number;
   blockNumber?: number;
+  retryCount?: number;
 
   /** Status */
   txStatus:

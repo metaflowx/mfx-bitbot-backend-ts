@@ -31,7 +31,7 @@ export const txRequestForDeposit = async (c: Context) => {
         const tx = await transactionModel.create({
             userId: user._id,
             assetId: assetId,
-            chain: asset.chainId === 56 ? "BSC" : "Polygon",
+            chain: asset.chainId === 56 ? "bsc" : "polygon",
             txType: 'deposit',
             txHash: randomUUIDv7('hex')
         })
@@ -52,25 +52,124 @@ export const txRequestForDeposit = async (c: Context) => {
 export const txConfirmRequestForDeposit = async (c: Context) => {
     const user = c.get('user');
     const { txId } = c.req.query();
+    
     try {
-        const txData = await transactionModel.findOne({
-            $and: [
-                { _id: txId },
-                { userId: user._id },
-                { txStatus: { $ne: 'completed' } },
-            ]
-        })
-        if (!txData) {
-            return c.json({ success: false, message: 'Transaction not found' });
+        // Validate txId format
+        if (!txId || !mongoose.Types.ObjectId.isValid(txId)) {
+            return c.json({ 
+                success: false, 
+                message: 'Invalid transaction ID' 
+            });
         }
-        await transactionModel.updateOne({
-            _id: txId
-        }, { $set: { txStatus: "confirmed" } }, { new: true });
 
-        return c.json({ success: true, message: 'Transaction confirmed' });
+        /// Find the transaction with stricter validation
+        const txData = await transactionModel.findOne({
+            _id: txId,
+            userId: user._id,
+            txType: 'deposit', /// MUST be a deposit
+            txStatus: 'pending', /// MUST be pending (not already confirmed/failed/completed)
+            settlementStatus: 'pending' /// MUST not be in settlement process
+        });
+
+        if (!txData) {
+            /// More specific error messages
+            const existingTx = await transactionModel.findOne({
+                _id: txId,
+                userId: user._id
+            });
+            
+            if (!existingTx) {
+                return c.json({ 
+                    success: false, 
+                    message: 'Transaction not found or does not belong to you' 
+                });
+            }
+            
+            if (existingTx.txType !== 'deposit') {
+                return c.json({ 
+                    success: false, 
+                    message: 'Only deposit transactions can be confirmed' 
+                });
+            }
+            
+            if (existingTx.txStatus !== 'pending') {
+                return c.json({ 
+                    success: false, 
+                    message: `Transaction is already ${existingTx.txStatus}. Cannot confirm again.` 
+                });
+            }
+            
+            return c.json({ 
+                success: false, 
+                message: 'Transaction cannot be confirmed' 
+            });
+        }
+
+        /// Add idempotency check - prevent duplicate confirmations
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
+            /// Use findOneAndUpdate with optimistic concurrency
+            const updatedTx = await transactionModel.findOneAndUpdate(
+                {
+                    _id: txId,
+                    userId: user._id,
+                    txType: 'deposit',
+                    txStatus: 'pending',
+                    settlementStatus: 'pending'
+                },
+                {
+                    $set: { 
+                        txStatus: "confirmed",
+                        updatedAt: new Date()
+                    }
+                },
+                {
+                    new: true,
+                    session,
+                    runValidators: true
+                }
+            );
+
+            if (!updatedTx) {
+                await session.abortTransaction();
+                return c.json({ 
+                    success: false, 
+                    message: 'Transaction was modified by another process. Please try again.' 
+                });
+            }
+
+            await session.commitTransaction();
+            
+            /// Log the confirmation
+            console.log(`User ${user._id} confirmed deposit ${txId}`);
+            
+            return c.json({ 
+                success: true, 
+                message: 'Transaction confirmed successfully',
+                data: {
+                    txId: updatedTx._id,
+                    txStatus: updatedTx.txStatus,
+                    txType: updatedTx.txType
+                }
+            });
+
+        } catch (transactionError) {
+            await session.abortTransaction();
+            throw transactionError;
+        } finally {
+            session.endSession();
+        }
 
     } catch (e) {
-        return c.json({ success: false, message: 'Error fetching transaction details', error: e });
+        console.error(`Error confirming transaction ${txId} for user ${user._id}:`, e);
+        
+        return c.json({ 
+            success: false, 
+            message: 'Error confirming transaction', 
+            error: e
+        });
     }
 }
 

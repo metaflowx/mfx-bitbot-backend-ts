@@ -78,69 +78,125 @@ const port = Bun.env.PORT || 8000
 
 
 if (process.env.ROLE === 'Watcher') {
-  /// Watcher
-  try {
-    /// cron job for network one run every 20 second
-    cron.schedule("*/30 * * * * *", async () => {
-      const depositWatcherOne = new Watcher(
-        "bsc"
-      )
-      await depositWatcherOne.evmWorker("EVM-BSC-Watcher-1")
-    })
-
-    /// cron job for network one run every 50 second
-    cron.schedule("*/45 * * * * *", async () => {
-      const depositWatcherOne = new Watcher(
-        "polygon"
-      )
-      await depositWatcherOne.evmWorker("EVM-Ploygon-Watcher-1")
-    })
-
-    /// will remove after testing
-    /// cron job for network one run every 20 second
-    cron.schedule("*/20 * * * * *", async () => {
-      const depositWatcherOne = new Watcher(
-        "amoy"
-      )
-      await depositWatcherOne.evmWorker("EVM-Ploygon-Testnet-Watcher-1")
-    })
-  } catch (error) {
-    console.log(error);
-  }
+    try {
+        /// Create persistent watcher instances
+        const bscWatcher = new Watcher("bsc", "EVM-BSC-Watcher");
+        const polygonWatcher = new Watcher("polygon", "EVM-Polygon-Watcher");
+        
+        /// Track cycle times for monitoring
+        const cycleStats = {
+            bsc: { lastStart: 0, lastEnd: 0, errorCount: 0 },
+            polygon: { lastStart: 0, lastEnd: 0, errorCount: 0 }
+        };
+        
+        /// Staggered start to prevent race conditions
+        setTimeout(() => {
+            cron.schedule("*/30 * * * * *", async () => {
+                cycleStats.bsc.lastStart = Date.now();
+                try {
+                    await bscWatcher.evmWorker();
+                    cycleStats.bsc.errorCount = 0; /// Reset error count on success
+                } catch (error) {
+                    cycleStats.bsc.errorCount++;
+                    console.error(`BSC watcher error #${cycleStats.bsc.errorCount}:`, error);
+                    
+                    /// If too many errors, skip next cycle
+                    if (cycleStats.bsc.errorCount > 3) {
+                        console.warn("Too many BSC errors, pausing for 2 minutes");
+                        await new Promise(resolve => setTimeout(resolve, 120000));
+                        cycleStats.bsc.errorCount = 0;
+                    }
+                }
+                cycleStats.bsc.lastEnd = Date.now();
+            });
+            console.log("✅ BSC watcher scheduled every 30 seconds");
+        }, 10000);
+        
+        setTimeout(() => {
+            cron.schedule("*/45 * * * * *", async () => {
+                cycleStats.polygon.lastStart = Date.now();
+                try {
+                    await polygonWatcher.evmWorker();
+                    cycleStats.polygon.errorCount = 0;
+                } catch (error) {
+                    cycleStats.polygon.errorCount++;
+                    console.error(`Polygon watcher error #${cycleStats.polygon.errorCount}:`, error);
+                    
+                    if (cycleStats.polygon.errorCount > 3) {
+                        console.warn("Too many Polygon errors, pausing for 2 minutes");
+                        await new Promise(resolve => setTimeout(resolve, 120000));
+                        cycleStats.polygon.errorCount = 0;
+                    }
+                }
+                cycleStats.polygon.lastEnd = Date.now();
+            });
+            console.log("✅ Polygon watcher scheduled every 45 seconds");
+        }, 20000);
+        
+        /// Log status every minute
+        setInterval(() => {
+            const now = Date.now();
+            console.log("📊 Watcher Status:", {
+                bsc: {
+                    lastCycleDuration: cycleStats.bsc.lastEnd > 0 ? cycleStats.bsc.lastEnd - cycleStats.bsc.lastStart : 'N/A',
+                    timeSinceLast: cycleStats.bsc.lastEnd > 0 ? Math.round((now - cycleStats.bsc.lastEnd) / 1000) : 'N/A',
+                    errorCount: cycleStats.bsc.errorCount
+                },
+                polygon: {
+                    lastCycleDuration: cycleStats.polygon.lastEnd > 0 ? cycleStats.polygon.lastEnd - cycleStats.polygon.lastStart : 'N/A',
+                    timeSinceLast: cycleStats.polygon.lastEnd > 0 ? Math.round((now - cycleStats.polygon.lastEnd) / 1000) : 'N/A',
+                    errorCount: cycleStats.polygon.errorCount
+                }
+            });
+        }, 60000);
+        
+        console.log("🚀 Watchers started with staggered schedules");
+        
+    } catch (error) {
+        console.error("Failed to start watchers:", error);
+        process.exit(1);
+    }
 }
+
 if (process.env.ROLE === 'Sender') {
-
-  /// Sender
-  try {
-    /// cron job for network one run every 40 second
-    cron.schedule("*/40 * * * * *", async () => {
-      const withdrawSenderOne = new Sender(
-        "bsc",
-      )
-      await withdrawSenderOne.evmWorker("EVM-BSC-Sender-1")
-    })
-
-    /// cron job for network one run every 60 second
-    cron.schedule("*/60 * * * * *", async () => {
-      const withdrawSenderOne = new Sender(
-        "polygon"
-      )
-      await withdrawSenderOne.evmWorker("EVM-Polygon-Sender-1")
-    })
-
-    /// will remove after testing
-    /// cron job for network one run every 40 second
-    // cron.schedule("*/30 * * * * *", async () => {
-    //   const withdrawSenderOne = new Sender(
-    //     "amoy"
-    //   )
-    //   await withdrawSenderOne.evmWorker("EVM-Polygon-Testnet-Sender-1")
-    // })
+    try {
+        /// Create sender instances once
+        const bscSender = new Sender("bsc", "EVM-BSC-Sender");
+        const polygonSender = new Sender("polygon", "EVM-Polygon-Sender");
+        
+        /// Staggered start times to prevent nonce conflicts if using same wallet
+        setTimeout(() => {
+            cron.schedule("*/40 * * * * *", async () => {
+                console.log(`[${new Date().toISOString()}] Starting BSC sender cycle`);
+                await bscSender.evmWorker();
+                
+                /// Optional: Run retry every 10 minutes
+                if (Date.now() % (10 * 60 * 1000) < 40000) {
+                    await bscSender.retryFailedWithdrawals();
+                }
+            });
+            console.log("✅ BSC sender scheduled every 40 seconds");
+        }, 15000); /// Start BSC after 15 seconds
+        
+        setTimeout(() => {
+            cron.schedule("*/55 * * * * *", async () => {
+                console.log(`[${new Date().toISOString()}] Starting Polygon sender cycle`);
+                await polygonSender.evmWorker();
+                
+                /// Optional: Run retry every 10 minutes
+                if (Date.now() % (10 * 60 * 1000) < 55000) {
+                    await polygonSender.retryFailedWithdrawals();
+                }
+            });
+            console.log("✅ Polygon sender scheduled every 55 seconds");
+        }, 30000); /// Start Polygon after 30 seconds
+        
+        console.log("🚀 Senders initialized with staggered schedules");
 
     /// Balance
 
     /// cron job for network one run every 5 mins
-    cron.schedule("*/6 * * * *", async () => {
+    cron.schedule("*/4 * * * *", async () => {
       const depositWatcherOne = new Balance(
         "bsc",
       )
@@ -148,26 +204,17 @@ if (process.env.ROLE === 'Sender') {
     })
 
     /// cron job for network one run every 7 mins
-    cron.schedule("*/8 * * * *", async () => {
+    cron.schedule("*/7 * * * *", async () => {
       const depositWatcherOne = new Balance(
         "polygon",
       )
       await depositWatcherOne.evmWorker("EVM-Polygon-Balance-1")
     })
-
-    /// cron job for network one run every 10 mins
-    // cron.schedule("*/30 * * * *", async () => {
-    //   const depositWatcherOne = new Balance(
-    //     "amoy",
-    //   )
-    //   await depositWatcherOne.evmWorker("EVM-Polygon-Testnet-Balance-1")
-    // })
-
-  } catch (error) {
-    console.log(error);
-
-  }
-
+        
+    } catch (error) {
+        console.error("Failed to initialize senders:", error);
+        process.exit(1);
+    }
 }
 
 
