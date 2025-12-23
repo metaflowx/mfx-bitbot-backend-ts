@@ -6,10 +6,6 @@ export interface IInvestment extends Document {
     type: 'ADD' | 'REMOVE';
     btcValue: string;
     btcPrice: string;
-    ethValue?: string;
-    ethPrice?: string;
-    solanaValue?: string;
-    solanaPrice?: string;
     createdAt: Date
     updatedAt: Date
 }
@@ -39,19 +35,7 @@ const InvestmentSchema: Schema = new Schema(
         btcPrice: { 
             type: String, 
             required: true
-        },
-        ethValue: { 
-            type: String
-        },
-        ethPrice: { 
-            type: String
-        },
-        solanaValue: { 
-            type: String
-        },
-        solanaPrice: { 
-            type: String
-        },
+        }
     },
     { timestamps: true }
 );

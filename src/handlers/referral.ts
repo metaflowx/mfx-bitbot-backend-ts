@@ -7,6 +7,7 @@ import WalletModel from "../models/walletModel";
 import mongoose, { Types } from "mongoose";
 import dotenv from "dotenv";
 import { formatUnits } from "viem";
+import { LEVEL_CONFIG } from "../utils/getActiveTillLevel";
 
 dotenv.config();
 
@@ -16,21 +17,18 @@ export const referralDetail = async (c: Context) => {
 
     const referralData = await ReferralEarnings.findOne({ userId: userId }).lean();
     return c.json(
-      { 
-        success: true, 
-        message: "Referral fetch successfully", 
-        data: referralData 
+      {
+        success: true,
+        message: "Referral fetch successfully",
+        data: referralData
       },
     );
   } catch (error) {
-    return c.json({ success: false,message: "Server error", error });
+    return c.json({ success: false, message: "Server error", error });
   }
 }
 
-/**
- * Get referral stats for the logged-in user
- */
-export const getReferralStats = async (c: Context) => {
+export const getReferralStatsDetailed = async (c: Context) => {
   try {
     const { fromDate, toDate } = c.req.query();
     const userId = c.get("user").id;
@@ -39,77 +37,287 @@ export const getReferralStats = async (c: Context) => {
     if (fromDate) dateFilter["$gte"] = new Date(fromDate);
     if (toDate) dateFilter["$lte"] = new Date(toDate);
 
-    const query: Record<string, any> = { userId };
-    if (Object.keys(dateFilter).length) {
-      query["createdAt"] = dateFilter;
-    }
-
-    const referralStats = await ReferralEarnings.findOne(query);
-    if (!referralStats) {
+    // 1️⃣ Fetch referral earnings for the user
+    const referralStatsDoc = await ReferralEarnings.findOne({ userId });
+    if (!referralStatsDoc) {
       return c.json({ success: false, message: "No referral stats found" });
     }
 
-    const levelsMap: any = referralStats.referralStats.levels || new Map();
+    const levelsMap: any = referralStatsDoc.referralStats.levels || new Map();
     const levels = Object.fromEntries(levelsMap);
+    
+    // 2️⃣ Get ALL referral IDs from ALL levels
+    const allReferralIds: string[] = [];
+    const directReferralIds: string[] = [];
+    let totalReferralCount = 0;
+    let totalDirectReferralCount = 0;
 
-    const totalEarningsLevelWise: Record<string, number> = {};
-    let totalEarnings = 0;
-    let totalTeamCount = 0;
-    let totalTeamTopUp = 0;
-
-    for (const [levelName, level] of Object.entries(levels)) {
-      const earnings = Number(level.earnings) || 0;
-      const count = Number(level.count) || 0;
-      totalEarningsLevelWise[levelName] = earnings;
-      totalEarnings += earnings;
-      totalTeamCount += count;
+    for (let i = 1; i <= 15; i++) {
+      const levelKey = `level${i}`;
+      const levelData = levels[levelKey];
+      
+      if (levelData?.referrals?.length) {
+        const referralStrings = levelData.referrals.map((ref: any) => 
+          ref.toString ? ref.toString() : ref
+        );
+        
+        totalReferralCount += referralStrings.length;
+        allReferralIds.push(...referralStrings);
+        
+        if (i === 1) {
+          totalDirectReferralCount = referralStrings.length;
+          directReferralIds.push(...referralStrings);
+        }
+      }
     }
 
-    const getTeamTopUp = async (userIds: mongoose.Types.ObjectId[]) => {
-      if (userIds.length === 0) return 0.0;
-      const wallets = await WalletModel.find({ userId: { $in: userIds } });
-      return wallets.reduce((sum, wallet) => {
-        const deposit = wallet.totalDepositInWeiUsd
-          ? Number(
-            formatUnits(BigInt(wallet.totalDepositInWeiUsd.toString()), 18)
-          )
-          : 0;
-        return sum + deposit;
-      }, 0);
-    };
-
-    const levelStats: any = {};
-    for (const [levelName, level] of Object.entries(levels)) {
-      const teamTopUp = await getTeamTopUp(level.referrals || []);
-      totalTeamTopUp += teamTopUp;
-
-      levelStats[levelName] = {
-        totalHeadcount: Number(level.count) || 0,
-        teamTopUp: teamTopUp.toFixed(2),
-        totalReturn: Number(level.earnings) || 0,
-        todaysEarnings: 0,
-      };
-    }
-
-    return c.json(
+    // 3️⃣ Get current user's investment
+    const currentUserInvestments = await investmentModel.aggregate([
       {
-        success: true,
-        message: "Referral stats fetched successfully",
-        data: {
-          referralStats,
-          levelStats,
-          totalEarnings,
-          totalEarningsLevelWise,
-          totalTeamCount,
-          totalTodayEarning: 0,
-          totalTeamTopUp: totalTeamTopUp.toFixed(2),
+        $match: {
+          userId: new mongoose.Types.ObjectId(userId),
+          type: 'ADD',
+          ...(Object.keys(dateFilter).length ? { createdAt: dateFilter } : {}),
         },
       },
-    );
+      {
+        $group: {
+          _id: null,
+          totalInvestment: { $sum: "$amount" },
+          lastInvestmentDate: { $max: "$createdAt" },
+        },
+      },
+    ]);
+
+    const currentUserTotalInvestment = currentUserInvestments[0]?.totalInvestment || 0;
+
+    // 4️⃣ Calculate TOTAL team business (ALL referrals' investments)
+    let totalTeamBusiness = 0;
+    let investmentResults = [];
+    
+    if (allReferralIds.length > 0) {
+      const allReferralObjectIds = allReferralIds.map(id => new mongoose.Types.ObjectId(id));
+      
+      investmentResults = await investmentModel.aggregate([
+        {
+          $match: {
+            userId: { $in: allReferralObjectIds },
+            type: 'ADD',
+            ...(Object.keys(dateFilter).length ? { createdAt: dateFilter } : {}),
+          },
+        },
+        {
+          $group: {
+            _id: "$userId",
+            totalInvestment: { $sum: "$amount" },
+            lastInvestmentDate: { $max: "$createdAt" },
+          },
+        },
+      ]);
+
+      // Calculate total team business
+      investmentResults.forEach(inv => {
+        totalTeamBusiness += Number(inv.totalInvestment);
+      });
+    }
+
+    // 5️⃣ Build direct referral list with THEIR team business
+    const directReferralList = [];
+    
+    if (directReferralIds.length > 0) {
+      // Get user details for direct referrals
+      const directReferralObjectIds = directReferralIds.map(id => 
+        new mongoose.Types.ObjectId(id)
+      );
+      
+      const directUsers = await userModel.find({ 
+        _id: { $in: directReferralObjectIds } 
+      }).select('email createdAt').lean();
+
+      const userMap: Record<string, any> = {};
+      directUsers.forEach(user => {
+        userMap[user._id.toString()] = user;
+      });
+
+      // Create investment map for direct referrals' PERSONAL investments
+      const directInvestmentMap: Record<string, any> = {};
+      investmentResults.forEach(inv => {
+        const userIdString = inv._id.toString();
+        directInvestmentMap[userIdString] = {
+          totalInvestment: inv.totalInvestment,
+          lastInvestmentDate: inv.lastInvestmentDate
+        };
+      });
+
+      // For each direct referral, calculate THEIR team business
+      for (const refId of directReferralIds) {
+        const user = userMap[refId];
+        const personalInvestment = directInvestmentMap[refId] || { 
+          totalInvestment: 0, 
+          lastInvestmentDate: null 
+        };
+        
+        // Get this direct referral's team business (their downline's investments)
+        let referralTeamBusiness = 0;
+        
+        // First, get this referral's own referral earnings to find their downline
+        const referralDoc = await ReferralEarnings.findOne({ 
+          userId: new mongoose.Types.ObjectId(refId) 
+        });
+        
+        if (referralDoc) {
+          // Get all referral IDs from this person's downline (their levels 1-15)
+          const referralLevelsMap: any = referralDoc.referralStats.levels || new Map();
+          const referralLevels = Object.fromEntries(referralLevelsMap);
+          
+          const allDownlineReferralIds: string[] = [];
+          
+          for (let i = 1; i <= 15; i++) {
+            const levelKey = `level${i}`;
+            const levelData = referralLevels[levelKey];
+            
+            if (levelData?.referrals?.length) {
+              const referralStrings = levelData.referrals.map((ref: any) => 
+                ref.toString ? ref.toString() : ref
+              );
+              allDownlineReferralIds.push(...referralStrings);
+            }
+          }
+          
+          // Calculate team business for this referral's downline
+          if (allDownlineReferralIds.length > 0) {
+            const downlineObjectIds = allDownlineReferralIds.map(id => 
+              new mongoose.Types.ObjectId(id)
+            );
+            
+            const downlineInvestments = await investmentModel.aggregate([
+              {
+                $match: {
+                  userId: { $in: downlineObjectIds },
+                  type: 'ADD',
+                  ...(Object.keys(dateFilter).length ? { createdAt: dateFilter } : {}),
+                },
+              },
+              {
+                $group: {
+                  _id: null,
+                  totalInvestment: { $sum: "$amount" },
+                },
+              },
+            ]);
+            
+            referralTeamBusiness = downlineInvestments[0]?.totalInvestment || 0;
+          }
+        }
+        
+        directReferralList.push({
+          user: { 
+            id: refId, 
+            email: user?.email || "N/A" 
+          },
+          joined: user?.createdAt || null,
+          investment: personalInvestment.totalInvestment, // Their personal investment
+          teamBusiness: referralTeamBusiness, // Their team's total business
+          lastInvestmentDate: personalInvestment.lastInvestmentDate,
+          bonus: 25,
+          earningsFromReferral: personalInvestment.totalInvestment * 0.25,
+        });
+      }
+    }
+
+    // 6️⃣ Get upline chain (simplified for now)
+    const uplineChain = await getUplineChainWithDetails(userId, dateFilter);
+
+    return c.json({
+      success: true,
+      message: "Referral stats fetched successfully",
+      data: {
+        totalReferralCount,
+        totalDirectReferralCount,
+        totalEarnings: referralStatsDoc.totalEarnings,
+        totalTeamBusiness, // Business from ALL your referrals (levels 1-15)
+        currentUserInvestment: currentUserTotalInvestment,
+        directReferralList,
+        uplineReferralList: uplineChain.map(upline => ({
+          ...upline,
+          earningsFromYou: currentUserTotalInvestment * (upline.bonus / 100),
+        })),
+      },
+    });
+
   } catch (error) {
-    return c.json({ success: false, message: "Server error", error });
+    console.error("Error:", error);
+    return c.json({ 
+      success: false, 
+      message: "Server error" 
+    });
   }
 };
+
+// Helper function for upline chain
+async function getUplineChainWithDetails(userId: mongoose.Types.ObjectId | string, dateFilter: any, maxLevels = 15) {
+  const uplineChain = [];
+  let currentUserId = typeof userId === 'string' 
+    ? new mongoose.Types.ObjectId(userId) 
+    : userId;
+  let level = 0;
+
+
+  while (level < maxLevels) {
+    const result = await ReferralEarnings.findOne(
+      { userId: currentUserId },
+      'referrerBy'
+    ).populate({
+      path: 'referrerBy',
+      select: 'email referralCode createdAt',
+      model: 'User'
+    });
+
+    if (!result || !result.referrerBy) break;
+
+    level++;
+    const bonus = LEVEL_CONFIG[level].percentage;
+
+    // Get referrer's personal investment
+    const referrerInvestments = await investmentModel.aggregate([
+      {
+        $match: {
+          userId: result.referrerBy._id,
+          type: 'ADD',
+          ...(Object.keys(dateFilter).length ? { createdAt: dateFilter } : {}),
+        },
+      },
+      {
+        $group: {
+          _id: "$userId",
+          totalInvestment: { $sum: "$amount" },
+          lastInvestmentDate: { $max: "$createdAt" },
+        },
+      },
+    ]);
+
+    const referrerInvestment = referrerInvestments[0] || {
+      totalInvestment: 0,
+      lastInvestmentDate: null
+    };
+
+    uplineChain.push({
+      level: level,
+      bonus: bonus,
+      user: {
+        id: result.referrerBy._id,
+        email: result.referrerBy.email,
+      },
+      joined: result.referrerBy.createdAt,
+      investment: referrerInvestment.totalInvestment,
+      lastInvestmentDate: referrerInvestment.lastInvestmentDate,
+    });
+
+    currentUserId = result.referrerBy._id;
+  }
+
+  return uplineChain;
+}
 
 export const getReferralUsersByLevel = async (c: Context) => {
   try {
@@ -183,33 +391,6 @@ export const getReferralUsersByLevel = async (c: Context) => {
 };
 
 
-/**
- * Get total referral earnings for the logged-in user
- */
-export const getReferralEarnings = async (c: Context) => {
-  try {
-    const userId = c.get("user").id;
-
-    const referralData = await ReferralEarnings.findOne({ userId });
-    if (!referralData) {
-      return c.json({ message: "No referral data found" }, 404);
-    }
-
-    /// Calculate total earnings from all levels
-    const totalEarnings = Object.values(
-      referralData.referralStats.levels
-    ).reduce((sum, level) => sum + (level.earnings || 0), 0);
-
-    return c.json(
-      { message: "Get total referral earnings", earnings: totalEarnings },
-      200
-    );
-  } catch (error) {
-    return c.json({ message: "Server error", error }, 500);
-  }
-};
-
-
 export const disableReferral = async (c: Context) => {
   try {
     // Extract userId from params
@@ -263,4 +444,5 @@ export const disableReferral = async (c: Context) => {
     return c.json({ message: "Server error", error }, 500);
   }
 };
+
 

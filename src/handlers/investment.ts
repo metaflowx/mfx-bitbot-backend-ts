@@ -1,7 +1,7 @@
 import { Context } from 'hono';
 import walletModel from '../models/walletModel';
 import { Types } from 'mongoose';
-import { addInvestment, calculateInvestmentStats, removeInvestment } from '../repositories/investment'; // Import function
+import { addInvestment, calculateInvestmentStats, getEmptyStats, removeInvestment } from '../repositories/investment'; // Import function
 import { distributeReferralRewards } from '../repositories/referral'; // Import the function
 import { formatUnits, parseEther, parseUnits } from "viem";
 import { updateWalletBalance } from '../repositories/wallet';
@@ -52,11 +52,15 @@ export const invest = async (c: Context) => {
       return c.json({ success: false, message: "User wallet not found." });
     }
 
-    const availableUsd = Number(
+    const availableUsdFromWithdrawableWallet = Number(
       formatUnits(BigInt(wallet.totalBalanceInWeiUsd.toString()), 18)
     );
+    
+    const availableUsdFromInvestmentWallet = Number(
+      formatUnits(BigInt(wallet.totalFlexibleBalanceInWeiUsd.toString()), 18)
+    );
 
-    if (amountUsd > availableUsd) {
+    if (amountUsd > availableUsdFromWithdrawableWallet+availableUsdFromInvestmentWallet) {
       return c.json({ success: false, message: "Insufficient balance." });
     }
 
@@ -95,19 +99,6 @@ export const redeem = async (c: Context) => {
       return c.json({ success: false, message: "Amount must be at least $10" });
     }
 
-    const wallet = await walletModel.findOne({ userId: userData._id });
-    if (!wallet) {
-      return c.json({ success: false, message: "User wallet not found." });
-    }
-
-    const lockedUsd = Number(
-      formatUnits(BigInt(wallet.totalLockInWeiUsd.toString()), 18)
-    );
-
-    if (amountUsd > lockedUsd) {
-      return c.json({ success: false, message: "Insufficient redeem balance." });
-    }
-
     /// ✅ POSITIVE amount ONLY
     const result = await removeInvestment(
       userData._id as Types.ObjectId,
@@ -131,10 +122,10 @@ export const redeem = async (c: Context) => {
 export const stats = async (c: Context) => {
   try {
     const userData = c.get('user');
-    const investments = await investmentModel.find({ id: userData._id }).lean();
+    const investments = await investmentModel.find({ userId: userData._id }).sort({ createdAt: 1 }).lean();
 
     if (!investments || investments.length === 0) {
-      return c.json({ success: false, message: "No investments found." });
+      return c.json({ success: false, message: "No investments found.",data: getEmptyStats()});
     }
     const data = await calculateInvestmentStats(investments);
 

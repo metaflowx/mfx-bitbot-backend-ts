@@ -107,8 +107,11 @@ export const distributeReferralRewards = async (
       }
 
       const levelKey = `level${level}`;
-      const levelData = upline.referralStats.levels.get(levelKey);
-      if (!levelData) break;
+      let levelData = upline.referralStats.levels.get(levelKey);
+      if (!levelData) {
+        levelData = { earnings: 0,count:0, missedEarnings: 0, referrals: [] };
+        upline.referralStats.levels.set(levelKey, levelData);
+      }
 
       const { percentage } = LEVEL_CONFIG[level];
 
@@ -122,7 +125,6 @@ export const distributeReferralRewards = async (
       if (level <= upline.activeTillLevel) {
         /// ACTIVE
         levelData.earnings += incomeUsd;
-        upline.totalEarnings += incomeUsd;
         const walletRes = await walletModel.updateOne(
           { userId: upline.userId },
           { $inc: { totalFlexibleBalanceInWeiUsd: new mongoose.Types.Decimal128(incomeWei.toString()) } },
@@ -139,6 +141,11 @@ export const distributeReferralRewards = async (
 
       /// 🔒 Mark investment processed
       upline.processedInvestments.push(investmentId);
+
+      /// Recalculate totalEarnings from all levels (safe)
+      const totalEarnings = Array.from(upline.referralStats.levels.values())
+        .reduce((sum, lvl) => sum + (lvl.earnings || 0), 0);
+      upline.totalEarnings = totalEarnings;
 
       await upline.save({ session: activeSession });
 

@@ -14,7 +14,7 @@ export interface IWallet extends Document {
     totalWithdrawInWeiUsd: mongoose.Types.Decimal128
     totalDepositInWeiUsd: mongoose.Types.Decimal128
     totalFlexibleBalanceInWeiUsd: mongoose.Types.Decimal128
-    totalLockInWeiUsd: mongoose.Types.Decimal128
+    totalLockInBtc: mongoose.Types.Decimal128
     lastWithdrawalAt?: Date
     createdAt: Date
     updatedAt: Date
@@ -76,7 +76,7 @@ const walletSchema: Schema = new Schema(
             type: mongoose.Schema.Types.Decimal128,
             default: () => new mongoose.Types.Decimal128('0')
         },
-        totalLockInWeiUsd: {
+        totalLockInBtc: {
             type: mongoose.Schema.Types.Decimal128,
             default: () => new mongoose.Types.Decimal128('0')
         },

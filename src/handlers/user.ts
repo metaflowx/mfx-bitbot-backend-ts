@@ -248,13 +248,13 @@ export const updatePassword = async (c: Context) => {
         }
 
         // Verify old password
-        const isOldPasswordValid = await comparePassword(oldPassword, user.password);
+        const isOldPasswordValid =  comparePassword(oldPassword, user.password);
         if (!isOldPasswordValid) {
             return c.json({ message: 'Incorrect old password' }, 401);
         }
 
         // Hash new password
-        const hashedNewPassword = await Bun.password.hash(newPassword, "bcrypt");
+        const hashedNewPassword = await Bun.password.hash(newPassword);
 
         // Update password in database
         user.password = hashedNewPassword;

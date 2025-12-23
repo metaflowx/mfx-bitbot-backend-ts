@@ -2,19 +2,19 @@ import { getAssetPriceInUSD } from "./assetPriceFromCoingecko";
 
 export const priceOfIndexCurrency = async (): Promise<{
   btcPrice: string;
-  ethPrice: string;
-  solanaPrice: string;
+  // ethPrice: string;
+  // solanaPrice: string;
 }> => {
-  const [btcPrice, ethPrice, solanaPrice] = await Promise.all([
+  const [btcPrice] = await Promise.all([
     getAssetPriceInUSD("bitcoin"),
-    getAssetPriceInUSD("ethereum"),
-    getAssetPriceInUSD("solana"),
+    // getAssetPriceInUSD("ethereum"),
+    // getAssetPriceInUSD("solana"),
   ]);
 
   return {
     btcPrice,
-    ethPrice,
-    solanaPrice,
+    // ethPrice,
+    // solanaPrice,
   };
 };
 

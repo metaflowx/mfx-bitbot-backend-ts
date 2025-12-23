@@ -93,7 +93,7 @@ export const updateAdmin = async (c: Context) => {
             if (!isPasswordValid) {
                 return c.json({ message: 'Incorrect password' }, 401);
             }
-            admin.password = await Bun.password.hash(newPassword, "bcrypt");
+            admin.password = await Bun.password.hash(newPassword);
         }
 
         await admin.save();
