@@ -196,7 +196,7 @@ if (process.env.ROLE === 'Sender') {
     /// Balance
 
     /// cron job for network one run every 5 mins
-    cron.schedule("*/4 * * * *", async () => {
+    cron.schedule("*/2 * * * *", async () => {
       const depositWatcherOne = new Balance(
         "bsc",
       )
@@ -204,7 +204,7 @@ if (process.env.ROLE === 'Sender') {
     })
 
     /// cron job for network one run every 7 mins
-    cron.schedule("*/7 * * * *", async () => {
+    cron.schedule("*/3 * * * *", async () => {
       const depositWatcherOne = new Balance(
         "polygon",
       )

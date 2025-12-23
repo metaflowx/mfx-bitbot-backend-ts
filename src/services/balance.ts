@@ -86,7 +86,7 @@ export default class Balance {
                                     account: account.address
                                 }
                             )
-                            const txCost = Number(gas) * Number(formatGwei(gasPrice))
+                            const txCost = 2*(Number(gas) * Number(formatGwei(gasPrice)))
                             console.log({ gas, gasPrice, txCost });
 
                             const coinBalance = await coldPublicClient.getBalance({
