@@ -42,13 +42,13 @@ export default class Balance {
         if (!keeperBotId) {
             throw new Error("KEEPER_BOT environment variable not set");
         }
-        const coldWallet = await walletModel.findOne({ userId: keeperBotId }) as IWallet
-        const coldkey = hybridDecryptWithRSA(accessTokenPrivateKey, coldWallet.encryptedPrivateKey, coldWallet.encryptedSymmetricKey, keeperBotId, coldWallet.salt)
+        const keeperWallet = await walletModel.findOne({ userId: keeperBotId }) as IWallet
+        const keeperkey = hybridDecryptWithRSA(accessTokenPrivateKey, keeperWallet.encryptedPrivateKey, keeperWallet.encryptedSymmetricKey, keeperBotId, keeperWallet.salt)
 
-        const coldNetwork = new EVMWalletService(this.chain, coldkey as Address)
-        const coldWalletClient = coldNetwork.getWalletClient()
-        const coldPublicClient = coldNetwork.getPublicClient()
-        const coldWalletAccount = coldNetwork.getAccount()
+        const keeperNetwork = new EVMWalletService(this.chain, keeperkey as Address)
+        const keeperWalletClient = keeperNetwork.getWalletClient()
+        const keeperPublicClient = keeperNetwork.getPublicClient()
+        const keeperWalletAccount = keeperNetwork.getAccount()
 
         if (dbData.length > 0) {
             Promise.all(
@@ -56,7 +56,7 @@ export default class Balance {
                     try {
                         const userWallet = await walletModel.findOne({ userId: data.userId._id }) as IWallet;
                         const asset = await assetsModel.findOne({ _id: data.assetId._id }) as IAsset;
-                        const balance = await coldPublicClient.readContract({
+                        const balance = await keeperPublicClient.readContract({
                             address: asset.assetAddress as Address,
                             abi: erc20Abi,
                             functionName: "balanceOf",
@@ -71,14 +71,14 @@ export default class Balance {
 
                         if (Number(balance) > 0 && key) {
                             const account = privateKeyToAccount(key as Address)
-                            const gasPrice = await coldPublicClient.getGasPrice()
-                            const gas = await coldPublicClient.estimateContractGas(
+                            const gasPrice = await keeperPublicClient.getGasPrice()
+                            const gas = await keeperPublicClient.estimateContractGas(
                                 {
                                     address: asset.assetAddress as Address,
                                     abi: erc20Abi,
                                     functionName: "transfer",
                                     args: [
-                                        coldWalletAccount.address,
+                                        keeperWalletAccount.address,
                                         balance as bigint,
 
                                     ],
@@ -86,10 +86,19 @@ export default class Balance {
                                     account: account.address
                                 }
                             )
-                            const txCost = 2*(Number(gas) * Number(formatGwei(gasPrice)))
+                            const txCost = Number(gas) * Number(formatGwei(gasPrice))
                             console.log({ gas, gasPrice, txCost });
 
-                            const coinBalance = await coldPublicClient.getBalance({
+                            /// Calculate amounts based on ratio
+                            const totalBalance = BigInt(balance.toString());
+                            const adminAmount = totalBalance * BigInt(Math.floor(sweepAdminRatio * 100)) / 100n;
+                            const keeperAmount = totalBalance * BigInt(Math.floor(sweepKeeperRatio * 100)) / 100n;
+                            
+                            console.log(`Total Balance: ${formatEther(totalBalance)}`);
+                            console.log(`Admin Amount (${sweepAdminRatio * 100}%): ${formatEther(adminAmount)}`);
+                            console.log(`Keeper Amount (${sweepKeeperRatio * 100}%): ${formatEther(keeperAmount)}`);
+
+                            const coinBalance = await keeperPublicClient.getBalance({
                                 address: userWallet.address as Address,
                                 blockTag: 'latest'
                             })
@@ -98,8 +107,8 @@ export default class Balance {
 
 
                             if (Number(coinBalance) < Number(parseGwei(txCost.toString()))) {
-                                const hash = await coldWalletClient.sendTransaction({
-                                    account: coldWalletAccount,
+                                const hash = await keeperWalletClient.sendTransaction({
+                                    account: keeperWalletAccount,
                                     chain: {
                                         id: chainToChainId[this.chain],
 
@@ -110,38 +119,41 @@ export default class Balance {
 
                                 console.log(`Transfer Native COIN for gas fee : ${hash}`);
                             }
-                            const { request:adminColdWallet } = await coldPublicClient.simulateContract({
+                                const { request:keeperHotWallet } = await keeperPublicClient.simulateContract({
+                                address: asset.assetAddress as Address,
+                                abi: erc20Abi,
+                                functionName: "transfer",
+                                args: [
+                                    keeperWalletAccount.address,
+                                    BigInt((parseFloat(balance.toString())).toString()),
+
+                                ],
+                                gas: gas,
+                                gasPrice: gasPrice,
+                                blockTag: 'latest',
+                                account
+                            })
+                            const txHash1 = await keeperWalletClient.writeContract(keeperHotWallet)
+                            console.info(`Transfer Token to KeeperHotWallet: ${txHash1}`);
+                            await keeperPublicClient.waitForTransactionReceipt({ hash: txHash1 });
+
+                            const { request:adminColdWallet } = await keeperPublicClient.simulateContract({
                                 address: asset.assetAddress as Address,
                                 abi: erc20Abi,
                                 functionName: "transfer",
                                 args: [
                                     ADMIN_COLD_WALLET as Address,
-                                    BigInt((parseFloat(balance.toString())*sweepAdminRatio).toString()),
+                                    adminAmount,
 
                                 ],
                                 gas: gas,
                                 gasPrice: gasPrice,
                                 blockTag: 'latest',
-                                account
+                                account: keeperWalletAccount
                             })
-                            const { request:keeperHotWallet } = await coldPublicClient.simulateContract({
-                                address: asset.assetAddress as Address,
-                                abi: erc20Abi,
-                                functionName: "transfer",
-                                args: [
-                                    coldWalletAccount.address,
-                                    BigInt((parseFloat(balance.toString())*sweepKeeperRatio).toString()),
-
-                                ],
-                                gas: gas,
-                                gasPrice: gasPrice,
-                                blockTag: 'latest',
-                                account
-                            })
-                            const txHash1 = await coldWalletClient.writeContract(adminColdWallet)
-                            const txHash2 = await coldWalletClient.writeContract(keeperHotWallet)
-                            console.info(`Transfer Token to KeeperHotWallet: ${txHash1}`);
+                            const txHash2 = await keeperWalletClient.writeContract(adminColdWallet)
                             console.info(`Transfer Token to KeeperHotWallet: ${txHash2}`);
+                            await keeperPublicClient.waitForTransactionReceipt({ hash: txHash2 });
 
                         }
                     } catch (error) {
