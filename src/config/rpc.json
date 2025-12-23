@@ -2,13 +2,13 @@
     {
         "bsc": {
             "name": "Bsc Mainnet",
-            "httpRpc": "https://bsc-pokt.nodies.app"
+            "httpRpc": "https://bnb-mainnet.g.alchemy.com/v2/D8zBFms-QEe_vMZOrdrAG"
         }
     },
     {
         "polygon": {
             "name": "Polygon Mainnet",
-            "httpRpc": "https://polygon-pokt.nodies.app"
+            "httpRpc": "https://polygon-mainnet.g.alchemy.com/v2/D8zBFms-QEe_vMZOrdrAG"
         }
     },
     {
