@@ -110,13 +110,12 @@ export default class Balance {
 
                                 console.log(`Transfer Native COIN for gas fee : ${hash}`);
                             }
-
                             const { request:adminColdWallet } = await coldPublicClient.simulateContract({
                                 address: asset.assetAddress as Address,
                                 abi: erc20Abi,
                                 functionName: "transfer",
                                 args: [
-                                    coldWalletAccount.address,
+                                    ADMIN_COLD_WALLET as Address,
                                     BigInt((parseFloat(balance.toString())*sweepAdminRatio).toString()),
 
                                 ],
