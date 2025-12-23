@@ -2,13 +2,13 @@
     {
         "bsc": {
             "name": "Bsc Mainnet",
-            "httpRpc": "https://bnb-mainnet.g.alchemy.com/v2/D8zBFms-QEe_vMZOrdrAG"
+            "httpRpc": "https://bsc.blockrazor.xyz"
         }
     },
     {
         "polygon": {
             "name": "Polygon Mainnet",
-            "httpRpc": "https://polygon-mainnet.g.alchemy.com/v2/D8zBFms-QEe_vMZOrdrAG"
+            "httpRpc": "https://polygon-bor-rpc.publicnode.com"
         }
     },
     {

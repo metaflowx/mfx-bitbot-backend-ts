@@ -10,7 +10,7 @@ export default class Watcher {
     private readonly LOCK_TIMEOUT_MS = 5 * 60 * 1000; /// 5 minutes
     private readonly CONFIRMATION_BLOCKS = 4; /// Adjust per chain
     private readonly BATCH_SIZE = 20;
-    private readonly MAX_BLOCK_RANGE = 500;
+    private readonly MAX_BLOCK_RANGE = 2000;
     private readonly workerId: string;
 
     constructor(private readonly chain: string, title: string) {
