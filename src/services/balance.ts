@@ -11,8 +11,8 @@ import { loadRSAKeyPair } from "../utils/loadRSAKeyPair";
 const { privateKey: accessTokenPrivateKey } = loadRSAKeyPair();
 
 const ADMIN_COLD_WALLET =`${Bun.env.ADMIN_COLD_WALLET}`
-const sweepAdminRatio = 0.5 /// 50%
-const sweepKeeperRatio = 0.5 /// 50%
+const sweepAdminRatio = 0.6 /// 60%
+const sweepKeeperRatio = 0.4 /// 40%
 
 export default class Balance {
 
