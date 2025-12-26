@@ -166,7 +166,7 @@ if (process.env.ROLE === 'Sender') {
         
         /// Staggered start times to prevent nonce conflicts if using same wallet
         setTimeout(() => {
-            cron.schedule("*/50 * * * * *", async () => {
+            cron.schedule("*/35 * * * * *", async () => {
                 console.log(`[${new Date().toISOString()}] Starting BSC sender cycle`);
                 await bscSender.evmWorker();
                 
@@ -196,7 +196,7 @@ if (process.env.ROLE === 'Sender') {
     /// Balance
 
     /// cron job for network one run every 5 mins
-    cron.schedule("*/10 * * * * *", async () => {
+    cron.schedule("*/2 * * * *", async () => {
       const depositBalanceOne = new Balance(
         "bsc",
       )
