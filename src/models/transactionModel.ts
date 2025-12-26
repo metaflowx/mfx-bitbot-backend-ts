@@ -9,7 +9,7 @@ export interface ITransaction extends Document {
 
   /** Blockchain */
   chain: string;
-  txHash: string;
+  txHash?: string;
   logIndex?: number;
   blockNumber?: number;
   retryCount?: number;
@@ -83,7 +83,7 @@ const TransactionSchema = new Schema<ITransaction>(
 
     txHash: {
       type: String,
-      required: true,
+      unique: true,
     },
 
     logIndex: {

@@ -216,7 +216,6 @@ export const txRequestForWithdrawal = async (c: Context) => {
             userId: user._id,
             assetId: assetId,
             txType: 'withdrawal',
-            txHash: randomUUIDv7('hex'),
             receiverAddress: withdrawalAddress,
             amountInWei: parseEther(withdrawalAmount).toString(),
             chain: asset.chainId === 56 ? "bsc" : "polygon",
