@@ -266,7 +266,7 @@ export default class Sender {
             });
 
             /// Add 20% buffer to gas estimate
-            const gasWithBuffer = gas * BigInt(120) / BigInt(100);
+            const gasWithBuffer = gas * BigInt(110) / BigInt(100);
 
             /// Simulate transaction first (safety check)
             const { request } = await this.publicClient.simulateContract({

@@ -1,167 +1,211 @@
 import { EVMWalletService, chainToChainId } from "./evmWallet";
-import { Address, Chain, erc20Abi, formatEther, formatGwei, parseGwei } from "viem";
+import { Address, Chain, erc20Abi, formatEther } from "viem";
 import transactionModel, { ITransaction } from "../models/transactionModel";
-import { privateKeyToAccount } from "viem/accounts";
-import { hybridDecryptWithRSA } from "../utils/cryptography";
 import walletModel, { IWallet } from "../models/walletModel";
 import assetsModel, { IAsset } from "../models/assetsModel";
+import { privateKeyToAccount } from "viem/accounts";
+import { hybridDecryptWithRSA } from "../utils/cryptography";
 import { loadRSAKeyPair } from "../utils/loadRSAKeyPair";
-
 
 const { privateKey: accessTokenPrivateKey } = loadRSAKeyPair();
 
-const ADMIN_COLD_WALLET =`${Bun.env.ADMIN_COLD_WALLET}`
-const sweepAdminRatio = 0.6 /// 60%
-const sweepKeeperRatio = 0.4 /// 40%
+const ADMIN_COLD_WALLET = Bun.env.ADMIN_COLD_WALLET as Address;
+const ADMIN_RATIO = 60n;
+const KEEPER_RATIO = 40n;
+const GAS_BUFFER_PERCENT = 110n; /// +10%
+const RETRIES = 3;
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function retryTx<T>(
+  fn: () => Promise<T>,
+  retries = RETRIES,
+  delayMs = 2000
+): Promise<T> {
+  let lastErr: any;
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (e: any) {
+      lastErr = e;
+      const msg = (e?.message || "").toLowerCase();
+      const retryable =
+        msg.includes("underpriced") ||
+        msg.includes("nonce") ||
+        msg.includes("replacement") ||
+        msg.includes("timeout") ||
+        msg.includes("temporarily");
+
+      if (!retryable || i === retries - 1) break;
+      await sleep(delayMs);
+    }
+  }
+  throw lastErr;
+}
 
 export default class Balance {
+  private keeperPublicClient: any;
+  private keeperWalletClient: any;
+  private keeperWalletAccount: any;
 
-    constructor(
-        private readonly chain: string
-    ) {
-        this.chain = chain
+  constructor(private readonly chain: string) {}
+
+  public async evmWorker(title: string) {
+    console.info(title);
+
+    const dbData = await transactionModel.find({
+      txStatus: "completed",
+      settlementStatus: "completed",
+      txType: "deposit",
+    });
+    if (!dbData.length) return;
+
+    const keeperBotId = Bun.env.KEEPER_BOT!;
+    const keeperWallet = (await walletModel.findOne({
+      userId: keeperBotId,
+    })) as IWallet;
+
+    const keeperKey = hybridDecryptWithRSA(
+      accessTokenPrivateKey,
+      keeperWallet.encryptedPrivateKey,
+      keeperWallet.encryptedSymmetricKey,
+      keeperBotId,
+      keeperWallet.salt
+    );
+
+    const keeperNetwork = new EVMWalletService(
+      this.chain,
+      keeperKey as Address
+    );
+    this.keeperPublicClient = keeperNetwork.getPublicClient();
+    this.keeperWalletClient = keeperNetwork.getWalletClient();
+    this.keeperWalletAccount = keeperNetwork.getAccount();
+
+    /// 🔐 SEQUENTIAL
+    for (const data of dbData) {
+      await this.processTransaction(data);
     }
-    public async evmWorker(title: string, privateKey?: Address) {
+  }
 
-        console.info(title);
-        const dbData = await transactionModel.find(
-            {
-                $and: [
-                    { 
-                        txStatus: "completed" 
-                    },
-                    { 
-                        settlementStatus: "completed" 
-                    },
-                    {
-                        txType:'deposit'
-                    }
-                ]
-            })
-        const keeperBotId = `${Bun.env.KEEPER_BOT}`
-        if (!keeperBotId) {
-            throw new Error("KEEPER_BOT environment variable not set");
-        }
-        const keeperWallet = await walletModel.findOne({ userId: keeperBotId }) as IWallet
-        const keeperkey = hybridDecryptWithRSA(accessTokenPrivateKey, keeperWallet.encryptedPrivateKey, keeperWallet.encryptedSymmetricKey, keeperBotId, keeperWallet.salt)
+  private async processTransaction(data: ITransaction) {
+    try {
+        
+      const userWallet = await walletModel.findOne({
+        userId: data.userId._id,
+      }) as IWallet;
 
-        const keeperNetwork = new EVMWalletService(this.chain, keeperkey as Address)
-        const keeperWalletClient = keeperNetwork.getWalletClient()
-        const keeperPublicClient = keeperNetwork.getPublicClient()
-        const keeperWalletAccount = keeperNetwork.getAccount()
+      const asset = await assetsModel.findOne({
+        _id: data.assetId._id,
+      }) as IAsset;
+      console.log({wallet:userWallet.address});
+      
+      /// 1) Read user token balance
+      const total = (await this.keeperPublicClient.readContract({
+        address: asset.assetAddress as Address,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [userWallet.address as Address],
+        blockTag: 'latest'
+      })) as bigint;
 
-        if (dbData.length > 0) {
-            Promise.all(
-                dbData.map(async (data: ITransaction) => {
-                    try {
-                        const userWallet = await walletModel.findOne({ userId: data.userId._id }) as IWallet;
-                        const asset = await assetsModel.findOne({ _id: data.assetId._id }) as IAsset;
-                        const balance = await keeperPublicClient.readContract({
-                            address: asset.assetAddress as Address,
-                            abi: erc20Abi,
-                            functionName: "balanceOf",
-                            args: [
-                                userWallet.address as Address,
-                            ],
-                            blockTag: 'latest'
-                        })
-                        console.log(`Token Balance of ${userWallet.address}: ${formatEther(balance)}`)
+      console.log(`Token Balance of ${userWallet.address}: ${formatEther(total)}`)
 
-                        const key = hybridDecryptWithRSA(accessTokenPrivateKey, userWallet.encryptedPrivateKey, userWallet.encryptedSymmetricKey,`${userWallet.userId}`, userWallet.salt)
+    //   if (total === 0n) return;
 
-                        if (Number(balance) > 0 && key) {
-                            const account = privateKeyToAccount(key as Address)
-                            const gasPrice = await keeperPublicClient.getGasPrice()
-                            const gas = await keeperPublicClient.estimateContractGas(
-                                {
-                                    address: asset.assetAddress as Address,
-                                    abi: erc20Abi,
-                                    functionName: "transfer",
-                                    args: [
-                                        keeperWalletAccount.address,
-                                        balance as bigint,
+      /// 2) Decrypt user key
+      const userKey = hybridDecryptWithRSA(
+        accessTokenPrivateKey,
+        userWallet.encryptedPrivateKey,
+        userWallet.encryptedSymmetricKey,
+        `${userWallet.userId}`,
+        userWallet.salt
+      );
+      if (!userKey) return;
 
-                                    ],
-                                    blockTag: "latest",
-                                    account: account.address
-                                }
-                            )
-                            const txCost = Number(gas) * Number(formatGwei(gasPrice))
-                            console.log({ gas, gasPrice, txCost });
+      const userAccount = privateKeyToAccount(userKey as Address);
 
-                            /// Calculate amounts based on ratio
-                            const totalBalance = BigInt(balance.toString());
-                            const adminAmount = totalBalance * BigInt(Math.floor(sweepAdminRatio * 100)) / 100n;
-                            const keeperAmount = totalBalance * BigInt(Math.floor(sweepKeeperRatio * 100)) / 100n;
-                            
-                            console.log(`Total Balance: ${formatEther(totalBalance)}`);
-                            console.log(`Admin Amount (${sweepAdminRatio * 100}%): ${formatEther(adminAmount)}`);
-                            console.log(`Keeper Amount (${sweepKeeperRatio * 100}%): ${formatEther(keeperAmount)}`);
+      /// 3) Split
+      const adminAmount = (total * ADMIN_RATIO) / 100n;
+      const keeperAmount = total - adminAmount;
 
-                            const coinBalance = await keeperPublicClient.getBalance({
-                                address: userWallet.address as Address,
-                                blockTag: 'latest'
-                            })
+      /// 4) Estimate gas for BOTH tx
+      const gasAdmin =
+        await this.keeperPublicClient.estimateContractGas({
+          address: asset.assetAddress as Address,
+          abi: erc20Abi,
+          functionName: "transfer",
+          args: [ADMIN_COLD_WALLET, adminAmount],
+          account: userAccount.address,
+          blockTag: "latest",
+        });
 
-                            console.log(`User Native Coin Balance: ${coinBalance}`);
+      const gasKeeper =
+        await this.keeperPublicClient.estimateContractGas({
+          address: asset.assetAddress as Address,
+          abi: erc20Abi,
+          functionName: "transfer",
+          args: [this.keeperWalletAccount.address, keeperAmount],
+          account: userAccount.address,
+          blockTag: "latest",
+        });
 
+      const gasPrice = await this.keeperPublicClient.getGasPrice();
+      const totalGasNeeded =
+        ((gasAdmin as bigint + gasKeeper as bigint) * gasPrice * GAS_BUFFER_PERCENT) / 100n;
 
-                            if (Number(coinBalance) < Number(parseGwei(txCost.toString()))) {
-                                const hash = await keeperWalletClient.sendTransaction({
-                                    account: keeperWalletAccount,
-                                    chain: {
-                                        id: chainToChainId[this.chain],
+      /// 5) Ensure user has native gas
+      const nativeBal = await this.keeperPublicClient.getBalance({
+        address: userWallet.address as Address,
+      });
 
-                                    } as Chain,
-                                    to: userWallet.address as Address,
-                                    value: parseGwei(txCost.toString()) - coinBalance,
-                                })
+      if (nativeBal < totalGasNeeded) {
+        await retryTx(() =>
+          this.keeperWalletClient.sendTransaction({
+            account: this.keeperWalletAccount,
+            chain: { id: chainToChainId[this.chain] } as Chain,
+            to: userWallet.address as Address,
+            value: totalGasNeeded - nativeBal,
+          })
+        );
+      }
 
-                                console.log(`Transfer Native COIN for gas fee : ${hash}`);
-                            }
-                                const { request:keeperHotWallet } = await keeperPublicClient.simulateContract({
-                                address: asset.assetAddress as Address,
-                                abi: erc20Abi,
-                                functionName: "transfer",
-                                args: [
-                                    keeperWalletAccount.address,
-                                    BigInt((parseFloat(balance.toString())).toString()),
+      // 6) TX → ADMIN (wait)
+      const txAdmin = await retryTx(() =>
+        this.keeperWalletClient.writeContract({
+          address: asset.assetAddress as Address,
+          abi: erc20Abi,
+          functionName: "transfer",
+          args: [ADMIN_COLD_WALLET, adminAmount],
+          account: userAccount,
+          gas: gasAdmin,
+        })
+      );
+      await this.keeperPublicClient.waitForTransactionReceipt({
+        hash: txAdmin,
+      });
 
-                                ],
-                                gas: gas,
-                                gasPrice: gasPrice,
-                                blockTag: 'latest',
-                                account
-                            })
-                            const txHash1 = await keeperWalletClient.writeContract(keeperHotWallet)
-                            console.info(`Transfer Token to KeeperHotWallet: ${txHash1}`);
-                            await keeperPublicClient.waitForTransactionReceipt({ hash: txHash1 });
+      // 7) TX → KEEPER (wait)
+      const txKeeper = await retryTx(() =>
+        this.keeperWalletClient.writeContract({
+          address: asset.assetAddress as Address,
+          abi: erc20Abi,
+          functionName: "transfer",
+          args: [this.keeperWalletAccount.address, keeperAmount],
+          account: userAccount,
+          gas: gasKeeper,
+        })
+      );
+      await this.keeperPublicClient.waitForTransactionReceipt({
+        hash: txKeeper,
+      });
 
-                            const { request:adminColdWallet } = await keeperPublicClient.simulateContract({
-                                address: asset.assetAddress as Address,
-                                abi: erc20Abi,
-                                functionName: "transfer",
-                                args: [
-                                    ADMIN_COLD_WALLET as Address,
-                                    adminAmount,
-
-                                ],
-                                gas: gas,
-                                gasPrice: gasPrice,
-                                blockTag: 'latest',
-                                account: keeperWalletAccount
-                            })
-                            const txHash2 = await keeperWalletClient.writeContract(adminColdWallet)
-                            console.info(`Transfer Token to KeeperHotWallet: ${txHash2}`);
-                            await keeperPublicClient.waitForTransactionReceipt({ hash: txHash2 });
-
-                        }
-                    } catch (error) {
-                        console.log(error);
-
-                    }
-                })
-            )
-        }
+      console.info(
+        `✅ Split success | User: ${userWallet.address} | Admin: ${adminAmount} | Keeper: ${keeperAmount}`
+      );
+    } catch (e) {
+      console.error("❌ Split failed:", e);
     }
+  }
 }

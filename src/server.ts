@@ -81,12 +81,12 @@ if (process.env.ROLE === 'Watcher') {
     try {
         /// Create persistent watcher instances
         const bscWatcher = new Watcher("bsc", "EVM-BSC-Watcher");
-        const polygonWatcher = new Watcher("polygon", "EVM-Polygon-Watcher");
+        // const polygonWatcher = new Watcher("polygon", "EVM-Polygon-Watcher");
         
         /// Track cycle times for monitoring
         const cycleStats = {
             bsc: { lastStart: 0, lastEnd: 0, errorCount: 0 },
-            polygon: { lastStart: 0, lastEnd: 0, errorCount: 0 }
+            // polygon: { lastStart: 0, lastEnd: 0, errorCount: 0 }
         };
         
         /// Staggered start to prevent race conditions
@@ -112,26 +112,26 @@ if (process.env.ROLE === 'Watcher') {
             console.log("✅ BSC watcher scheduled every 30 seconds");
         }, 10000);
         
-        setTimeout(() => {
-            cron.schedule("*/45 * * * * *", async () => {
-                cycleStats.polygon.lastStart = Date.now();
-                try {
-                    await polygonWatcher.evmWorker();
-                    cycleStats.polygon.errorCount = 0;
-                } catch (error) {
-                    cycleStats.polygon.errorCount++;
-                    console.error(`Polygon watcher error #${cycleStats.polygon.errorCount}:`, error);
+        // setTimeout(() => {
+        //     cron.schedule("*/45 * * * * *", async () => {
+        //         cycleStats.polygon.lastStart = Date.now();
+        //         try {
+        //             await polygonWatcher.evmWorker();
+        //             cycleStats.polygon.errorCount = 0;
+        //         } catch (error) {
+        //             cycleStats.polygon.errorCount++;
+        //             console.error(`Polygon watcher error #${cycleStats.polygon.errorCount}:`, error);
                     
-                    if (cycleStats.polygon.errorCount > 3) {
-                        console.warn("Too many Polygon errors, pausing for 2 minutes");
-                        await new Promise(resolve => setTimeout(resolve, 120000));
-                        cycleStats.polygon.errorCount = 0;
-                    }
-                }
-                cycleStats.polygon.lastEnd = Date.now();
-            });
-            console.log("✅ Polygon watcher scheduled every 45 seconds");
-        }, 20000);
+        //             if (cycleStats.polygon.errorCount > 3) {
+        //                 console.warn("Too many Polygon errors, pausing for 2 minutes");
+        //                 await new Promise(resolve => setTimeout(resolve, 120000));
+        //                 cycleStats.polygon.errorCount = 0;
+        //             }
+        //         }
+        //         cycleStats.polygon.lastEnd = Date.now();
+        //     });
+        //     console.log("✅ Polygon watcher scheduled every 45 seconds");
+        // }, 20000);
         
         /// Log status every minute
         setInterval(() => {
@@ -142,11 +142,11 @@ if (process.env.ROLE === 'Watcher') {
                     timeSinceLast: cycleStats.bsc.lastEnd > 0 ? Math.round((now - cycleStats.bsc.lastEnd) / 1000) : 'N/A',
                     errorCount: cycleStats.bsc.errorCount
                 },
-                polygon: {
-                    lastCycleDuration: cycleStats.polygon.lastEnd > 0 ? cycleStats.polygon.lastEnd - cycleStats.polygon.lastStart : 'N/A',
-                    timeSinceLast: cycleStats.polygon.lastEnd > 0 ? Math.round((now - cycleStats.polygon.lastEnd) / 1000) : 'N/A',
-                    errorCount: cycleStats.polygon.errorCount
-                }
+                // polygon: {
+                //     lastCycleDuration: cycleStats.polygon.lastEnd > 0 ? cycleStats.polygon.lastEnd - cycleStats.polygon.lastStart : 'N/A',
+                //     timeSinceLast: cycleStats.polygon.lastEnd > 0 ? Math.round((now - cycleStats.polygon.lastEnd) / 1000) : 'N/A',
+                //     errorCount: cycleStats.polygon.errorCount
+                // }
             });
         }, 60000);
         
@@ -162,54 +162,54 @@ if (process.env.ROLE === 'Sender') {
     try {
         /// Create sender instances once
         const bscSender = new Sender("bsc", "EVM-BSC-Sender");
-        const polygonSender = new Sender("polygon", "EVM-Polygon-Sender");
+        // const polygonSender = new Sender("polygon", "EVM-Polygon-Sender");
         
         /// Staggered start times to prevent nonce conflicts if using same wallet
         setTimeout(() => {
-            cron.schedule("*/40 * * * * *", async () => {
+            cron.schedule("*/50 * * * * *", async () => {
                 console.log(`[${new Date().toISOString()}] Starting BSC sender cycle`);
                 await bscSender.evmWorker();
                 
                 /// Optional: Run retry every 10 minutes
-                if (Date.now() % (10 * 60 * 1000) < 40000) {
+                if (Date.now() % (5 * 60 * 1000) < 40000) {
                     await bscSender.retryFailedWithdrawals();
                 }
             });
             console.log("✅ BSC sender scheduled every 40 seconds");
         }, 15000); /// Start BSC after 15 seconds
         
-        setTimeout(() => {
-            cron.schedule("*/55 * * * * *", async () => {
-                console.log(`[${new Date().toISOString()}] Starting Polygon sender cycle`);
-                await polygonSender.evmWorker();
+        // setTimeout(() => {
+        //     cron.schedule("*/55 * * * * *", async () => {
+        //         console.log(`[${new Date().toISOString()}] Starting Polygon sender cycle`);
+        //         await polygonSender.evmWorker();
                 
-                /// Optional: Run retry every 10 minutes
-                if (Date.now() % (10 * 60 * 1000) < 55000) {
-                    await polygonSender.retryFailedWithdrawals();
-                }
-            });
-            console.log("✅ Polygon sender scheduled every 55 seconds");
-        }, 30000); /// Start Polygon after 30 seconds
+        //         /// Optional: Run retry every 10 minutes
+        //         if (Date.now() % (10 * 60 * 1000) < 55000) {
+        //             await polygonSender.retryFailedWithdrawals();
+        //         }
+        //     });
+        //     console.log("✅ Polygon sender scheduled every 55 seconds");
+        // }, 30000); /// Start Polygon after 30 seconds
         
         console.log("🚀 Senders initialized with staggered schedules");
 
     /// Balance
 
     /// cron job for network one run every 5 mins
-    cron.schedule("*/2 * * * *", async () => {
-      const depositWatcherOne = new Balance(
+    cron.schedule("*/10 * * * * *", async () => {
+      const depositBalanceOne = new Balance(
         "bsc",
       )
-      await depositWatcherOne.evmWorker("EVM-BSC-Balance-1")
+      await depositBalanceOne.evmWorker("EVM-BSC-Balance-1")
     })
 
     /// cron job for network one run every 7 mins
-    cron.schedule("*/3 * * * *", async () => {
-      const depositWatcherOne = new Balance(
-        "polygon",
-      )
-      await depositWatcherOne.evmWorker("EVM-Polygon-Balance-1")
-    })
+    // cron.schedule("*/3 * * * *", async () => {
+    //   const depositWatcherOne = new Balance(
+    //     "polygon",
+    //   )
+    //   await depositWatcherOne.evmWorker("EVM-Polygon-Balance-1")
+    // })
         
     } catch (error) {
         console.error("Failed to initialize senders:", error);
