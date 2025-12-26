@@ -112,7 +112,7 @@ export default class Balance {
 
       console.log(`Token Balance of ${userWallet.address}: ${formatEther(total)}`)
 
-    //   if (total === 0n) return;
+      if (total === 0n) return;
 
       /// 2) Decrypt user key
       const userKey = hybridDecryptWithRSA(
