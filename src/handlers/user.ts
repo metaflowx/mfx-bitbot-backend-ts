@@ -17,7 +17,7 @@ const { pubKey: accessTokenPublicKey } = loadRSAKeyPair();
 // Create User
 export const createUser = async (c: Context) => {
     try {
-        const { email, password, confirmPassword, referralCode } = await c.req.json();
+        let { email, password, confirmPassword, referralCode } = await c.req.json();
 
         // Ensure either email or mobile number is provided
         if (!password || !confirmPassword) {
@@ -31,6 +31,7 @@ export const createUser = async (c: Context) => {
         if (!referralCode) {
             return c.json({success: false, message: 'referralCode is required' });
         }
+        email = email?.trim().toLowerCase();
         if (!email) {
             return c.json({ success: false, message: 'Either email is required' });
         }
@@ -96,17 +97,17 @@ export const createUser = async (c: Context) => {
 
 export const loginUser = async (c: Context) => {
     try {
-        const { email, mobileNumber, password } = await c.req.json();
-
-        // Ensure email or mobile number is provided
-        if (!email && !mobileNumber) {
+        let { email, password } = await c.req.json();
+        
+        email = email?.trim().toLowerCase();
+        /// Ensure email or mobile number is provided
+        if (!email) {
             return c.json({success: false, message: 'Either email or mobile number is required' });
         }
 
         // Build query dynamically based on provided login credential
         const query: any = {};
         if (email) query.email = email;
-        if (mobileNumber) query.mobileNumber = mobileNumber;
 
         // Find user by email or mobile number
         const user = await UserModel.findOne(query);
